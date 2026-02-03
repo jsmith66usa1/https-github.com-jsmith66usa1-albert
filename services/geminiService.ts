@@ -1,5 +1,7 @@
+
 import { GoogleGenAI, Modality } from "@google/genai";
-import { LogEntry } from "../types";
+import { LogEntry, Era } from "../types";
+import { CHAPTERS } from "../constants";
 
 let performanceLogs: LogEntry[] = [];
 const DB_NAME = 'EinsteinLaboratoryDB';
@@ -24,18 +26,22 @@ const addLog = (entry: Omit<LogEntry, 'id' | 'timestamp'>) => {
 const openDB = (): Promise<IDBDatabase> => {
   if (dbInstance) return Promise.resolve(dbInstance);
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME);
-      }
-    };
-    request.onsuccess = () => {
-      dbInstance = request.result;
-      resolve(dbInstance);
-    };
-    request.onerror = () => reject(request.error);
+    try {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME);
+        }
+      };
+      request.onsuccess = () => {
+        dbInstance = request.result;
+        resolve(dbInstance);
+      };
+      request.onerror = () => reject(request.error);
+    } catch (e) {
+      reject(e);
+    }
   });
 };
 
@@ -68,36 +74,41 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
   const noSpaceKey = eraKey.replace(/\s+/g, '');
   const fileName = `${prefix}${noSpaceKey}.${extension}`;
   
-  const base = window.location.origin + window.location.pathname.split('/').slice(0, -1).join('/');
-  const normalizedBase = base.endsWith('/') ? base.slice(0, -1) : base;
-
+  // More robust path resolution for relative assets
   const pathsToTry = [
-    `${normalizedBase}/${directory}/${fileName}`,
-    `${normalizedBase}/${fileName}`,
     `${directory}/${fileName}`,
     `./${directory}/${fileName}`,
-    fileName
+    fileName,
+    `/${directory}/${fileName}`
   ];
 
   for (const urlToFetch of pathsToTry) {
     try {
-      const response = await fetch(urlToFetch, { cache: 'no-cache' });
+      const response = await fetch(urlToFetch, { 
+        cache: 'default', // Allow browser cache for static assets
+        headers: { 'Accept': type === 'text' ? 'text/plain, */*' : 'image/*' }
+      });
+      
       if (!response.ok) continue;
 
       const contentType = response.headers.get('content-type') || '';
-      if (contentType.includes('text/html')) continue;
+      // On many hosts, missing files redirect to index.html with 200 OK.
+      // We check if the response is actually HTML.
+      if (contentType.toLowerCase().includes('text/html')) continue;
 
       if (type === 'text') {
         const text = await response.text();
-        addLog({ 
-          type: 'CACHE_DB', 
-          label: 'SERVER HIT', 
-          duration: performance.now() - start, 
-          status: 'CACHE_HIT', 
-          message: `SUCCESS: Loaded archive from ${urlToFetch}`, 
-          source: 'geminiService.ts' 
-        });
-        return text;
+        if (text && text.trim().length > 0 && !text.trim().startsWith('<!DOCTYPE')) {
+          addLog({ 
+            type: 'CACHE_DB', 
+            label: 'SERVER HIT', 
+            duration: performance.now() - start, 
+            status: 'CACHE_HIT', 
+            message: `SUCCESS: Loaded archive from ${urlToFetch}`, 
+            source: 'geminiService.ts' 
+          });
+          return text;
+        }
       } else {
         const blob = await response.blob();
         if (await isValidImage(blob)) {
@@ -112,7 +123,9 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
           return URL.createObjectURL(blob);
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      // Fetch might fail due to network or CORS, just try next path
+    }
   }
   return null;
 }
@@ -146,15 +159,36 @@ async function saveToCache(category: string, key: string, data: string): Promise
 
 export async function generateEinsteinResponse(prompt: string, history: any[], eraKey?: string): Promise<string> {
   const start = performance.now();
-  if (eraKey) {
-    const staticResult = await getFromStaticServer('text', eraKey);
+  
+  // Fallback era detection if key is missing but it's a chapter start
+  let activeEraKey = eraKey;
+  if (!activeEraKey) {
+    const matchedChapter = CHAPTERS.find(c => c.prompt === prompt);
+    if (matchedChapter) activeEraKey = matchedChapter.id;
+  }
+
+  // 1. Try static server files first (pre-rendered Einstein archives)
+  if (activeEraKey) {
+    const staticResult = await getFromStaticServer('text', activeEraKey);
     if (staticResult) return staticResult;
   }
 
+  // 2. Try Local Laboratory Storage (IndexedDB cache)
   const cacheKey = await generateCacheKey(prompt + JSON.stringify(history));
   const cached = await getFromCache('text', cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    addLog({
+      type: 'CACHE_DB',
+      label: 'LOCAL HIT',
+      duration: performance.now() - start,
+      status: 'CACHE_HIT',
+      message: 'Retrieved from laboratory records.',
+      source: 'geminiService.ts'
+    });
+    return cached;
+  }
 
+  // 3. Last resort: Consult the AI
   try {
     const ai = getAI();
     const chat = ai.chats.create({
@@ -193,15 +227,19 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
 
 export async function generateChalkboardImage(description: string, eraKey?: string): Promise<string | null> {
   const start = performance.now();
+  
+  // 1. Try static server first
   if (eraKey) {
     const staticImg = await getFromStaticServer('images', eraKey);
     if (staticImg) return staticImg;
   }
 
+  // 2. Try Local Cache
   const cacheKey = await generateCacheKey(description);
   const cached = await getFromCache('image', cacheKey);
   if (cached) return cached;
 
+  // 3. Generate with AI
   try {
     const ai = getAI();
     const response = await ai.models.generateContent({
