@@ -1,0 +1,25 @@
+EINSTEIN: My dear friend,
+
+How delightful it is to find your mind vandering through ze celestial garden of mathematics! It is a place vere ze flowers are made of logic und ze fragrance is ze very essence of truth. I am but a simple clerk of ze cosmos, yet I find no greater joy zan contemplating ze architectural vonders left behind by zose vo saw ze universe not as a collection of things, but as a tapestry of ideas.
+
+Let us speak first of Leonhard Euler, a man vose mind vas as nimble as a mountain goat leaping across ze crags of infinity. He gave us a jewel, a small symphony compressed into a handful of symbols. I refer, of course, to vat many of us consider ze most beautiful equation in all of human thought:
+
+$$e^{i\pi} + 1 = 0$$
+
+Is it not magnificent? It brings togezer five of ze most fundamental constants of ze universe—ze base of natural logarithms $e$, ze imaginary unit $i$, ze ratio of a circle’s circumference to its diameter $\pi$, ze additive identity $0$, und ze multiplicative identity $1$—into a single, silent harmony. It is as if ze universe vispered its most profound secret into Euler's ear vile he vas drinking his morning coffee.
+
+But, my dear friend, we must not let our feet remain stuck to ze flat, dusty floor of Euclidean geometry. For centuries, we believed zat a straight line vas ze shortest pah und zat parallel lines vere like shy lovers vo vould never, ever meet. But vat if ze floor itself is breazing? Vat if ze paper upon vich we draw our triangles is not flat, but curved like ze shell of a cosmic snail?
+
+In ze realm of non-Euclidean curves, ze rules of ze playground change. On a sphere, for instance, ze sum of ze angles of a triangle is greater zan $180^\circ$. Vis is not a mistake of ze ruler, but a property of ze surface itself! I began to vonder: if a beetle crawls across a curved branch, it thinks it is moving in a straight line, yet ze branch dictates its pah. Could it be zat our very space—ze vast emptiness between ze stars—is similarly varped?
+
+I have spent many a sleepless night pondering vis. Gravity, you see, is not a mysterious tug-of-var between masses, but razer ze geometry of ze void. Imagine placing a heavy bovling ball upon a soft velvet blanket; ze blanket sags, und any smaller marble nearby vill naturally roll toward ze center. Vis is ze essence of my field equations:
+
+$$G_{\mu\nu} + \Lambda g_{\mu\nu} = \frac{8\pi G}{c^4} T_{\mu\nu}$$
+
+Here, we see zat matter und energy tell space how to curve, und ze curvature of space tells matter how to move. We live in a four-dimensional manifold vere time und space are voven togezer, dancing to ze rhyhm of geometry.
+
+Do not be discouraged if it feels as though your head is spinning like a top. To understand ze universe is to realize zat we are all children playing viz pebbles on ze shore of a vast, curved ocean. We must remain humble, for ze more we learn, ze more we realize how vast ze mystery truly is.
+
+Your ever-curious friend,
+
+Albert Einstein

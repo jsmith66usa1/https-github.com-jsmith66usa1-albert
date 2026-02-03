@@ -1,0 +1,31 @@
+EINSTEIN: My dear friend,
+
+It is a truly magnificent curiosity you bring to my desk today! You ask about ze "void," zat sublime "nothing" vich ze brilliant minds of ancient India—zose master architects of ze invisible—gifted to our collective human understanding. My own simple thoughts on ze curvature of spacetime vould be quite lonely vizout ze elegant digit zey called *Shunya*.
+
+You see, in ze ancient Indian tradition, particularly in ze vorks of sages like Brahmagupta und Aryabhata, zero vas not merely a placeholder, like a silent usher in a theater. No, it vas a profound ontological discovery! Zey realized zat ze "void" is ze canvas upon vich ze entire symphony of mathematics is vritten.
+
+Think of it vis vay, my dear friend: Imagine you have a sturdy coat viz a deep pocket. If zat pocket is stuffed full of old coins und bits of string, it is occupied; it is "something." But if ze pocket is empty, it possesses a peculiar und formidable power. An empty pocket is not a failure of ze tailor; it is a vessel of pure potentiality! Because it contains *nothing*, it has ze capacity to hold *anything*. 
+
+In ze same vay, ze mathematical zero allows our numbers to dance across ze page in place-value notation. Vizout vis "empty pocket," ze very language of ze universe vould be stuttering und clumsy. 
+
+Consider ze beauty of vis simple balance:
+
+$$x + (-x) = 0$$
+
+Und ze vay vis "nothing" dictates ze behavior of ze "everything" in my own scribblings regarding energy und mass:
+
+$$E^2 = (pc)^2 + (m_0c^2)^2$$
+
+Vere $m_0$ is ze rest mass—und if zat mass vere to vanish into ze void of zero, we find ourselves traveling at ze speed of light, like a photon chasing its own shadow!
+
+Ze ancient Brahmi numerals, ze ancestors of our own, initially represented vis concept as a simple dot, ze *bindu*. It vas a seed from vich ze tree of infinity grew. In later inscriptions, it evolved into ze familiar circle we use today, a shape viz no beginning und no end, much like ze universe itself.
+
+Ze "void" is powerful because it is ze point of equilibrium. It is ze silence between ze notes zat makes ze music audible. As we approach ze infinitesimal, we find ze infinite:
+
+$$\lim_{x \to 0} \frac{1}{x} = \infty$$
+
+Is it not vondrous? By defining "nothing," ze Indians gave us ze tools to measure "everything." I am humbled by such ancient clarity. I often feel like a child playing on ze seashore, finding a smoozer pebble or a prettier shell zan ordinary, vile ze great ocean of truth—ze great *Shunya*—lies all undiscovered before me.
+
+Your most humble und vandering servant,
+
+A. Einstein

@@ -1,0 +1,28 @@
+EINSTEIN: My dear friend,
+
+Come, pull up a chair. Let us not worry about ze bending of light or ze curvature of spacetime for a moment. Sometimes, to understand ze symphony of ze universe, vun must first appreciate ze simple tapping of a drum.
+
+We often think of mathematics as a high tower of ivory, inaccessible und cold. But I tell you, it is not! It is as organic as a heartbeat. Consider ze humble **tally mark**. It is ze first spark of human abstraction. Imagine our ancestors, long before ze Parthenon or ze Patent Office in Bern. A shepherd looks at his flock. He does not see "numbers" floating in ze ether; he sees distinct entities. He scratches a line on a wolf bone—*scratch*.
+
+Zat single scratch is a metaphor for existence itself: "Zere is something here."
+
+A second scratch—"Und another."
+
+It is ze crystallization of time into space. A tally mark is a frozen memory. It is ze beginning of ze great language we speak today. Vizout zat first scratch, zere is no calculus, no relativity, no music of ze spheres.
+
+But counting is merely ze rhythm; we needed melody. We turn our gaze to ze sands of Egypt. Ach, ze Egyptians! Zey vere practical poets. Zey lived at ze mercy of ze Nile, a river viz ze temperament of a moody opera singer. Every year, ze Nile vould flood und vash avay ze boundaries of ze farmers' fields. Chaos!
+
+To restore order, zey invented *geometry*—quite literally, "earth-measuring." Zey vere ze "rope-stretchers." Can you imagine? Zey used ropes viz knots tied at specific intervals to create perfect right angles (ze 3-4-5 triangle, long before Pythagoras claimed ze credit!). Zey imposed a grid of logic upon ze shifting mud.
+
+Und consider ze Pyramids. Zose stone mountains are not just tombs; zey are geometry reaching for ze divine. To construct ze smooth face of a pyramid, or to tax a triangular plot of land left by ze receding river, vun needs a fundamental truth. Vun needs to know how much space resides inside ze three lines. Ze area $A$ of such a shape, defined by its base $b$ und its height $h$, is a relationship as beautiful und absolute as $E=mc^2$.
+
+It is expressed simply as:
+
+$$ A = \frac{1}{2}bh $$
+
+Is it not marvelous? Vun-half! It implies zat every triangle is merely a rectangle zat has humbly folded itself in half.
+
+So you see, my dear friend, ven we vrite equations, we are not just manipulating symbols. We are stretching ropes across ze mud of ze Nile, trying to find order in ze chaos.
+
+Your friend,
+A. Einstein

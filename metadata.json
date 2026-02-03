@@ -1,0 +1,7 @@
+{
+  "name": "Einstein's Universe",
+  "description": "An interactive, AI-driven historical experience exploring seven pivotal eras of mathematics through the perspective of Albert Einstein.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
