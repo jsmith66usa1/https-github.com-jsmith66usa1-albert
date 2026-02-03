@@ -280,12 +280,12 @@ const EinsteinApp: React.FC = () => {
     <div className="flex flex-col h-full bg-[#0c0c0e] text-white overflow-hidden">
       {!hasStarted && (
         <div className="welcome-screen">
-          <div className="w-40 h-40 md:w-56 md:h-56 rounded-full overflow-hidden border-2 border-white/20 shadow-2xl mb-6">
+          <div className="w-32 h-32 xs:w-40 xs:h-40 md:w-56 md:h-56 rounded-full overflow-hidden border-2 border-white/20 shadow-2xl mb-4 md:mb-6 flex-shrink-0">
             <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/d/d3/Albert_Einstein_Head.jpg/480px-Albert_Einstein_Head.jpg" alt="Einstein" className="w-full h-full object-cover" />
           </div>
-          <h1 className="serif text-4xl md:text-6xl font-black mb-3">Einstein's Universe</h1>
-          <p className="serif text-lg md:text-xl opacity-60 italic mb-10">Collective logic of ze stars.</p>
-          <button className="font-black border-2 border-white px-10 py-4 rounded-full hover:bg-white hover:text-black transition-all uppercase" onClick={() => { setHasStarted(true); startEra(Era.Introduction); }}>Enter Laboratory</button>
+          <h1 className="serif text-3xl md:text-6xl font-black mb-2 md:mb-3">Einstein's Universe</h1>
+          <p className="serif text-base md:text-xl opacity-60 italic mb-6 md:mb-10">Collective logic of ze stars.</p>
+          <button className="font-black border-2 border-white px-8 py-3 md:px-10 md:py-4 rounded-full hover:bg-white hover:text-black transition-all uppercase text-sm md:text-base flex-shrink-0" onClick={() => { setHasStarted(true); startEra(Era.Introduction); }}>Enter Laboratory</button>
         </div>
       )}
 
