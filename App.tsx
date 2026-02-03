@@ -280,12 +280,26 @@ const EinsteinApp: React.FC = () => {
     <div className="flex flex-col h-full bg-[#0c0c0e] text-white overflow-hidden">
       {!hasStarted && (
         <div className="welcome-screen">
-          <div className="w-28 h-28 xs:w-36 xs:h-36 md:w-48 md:h-48 rounded-full overflow-hidden border-2 border-white/20 shadow-2xl mb-4 flex-shrink-0">
+          {/* 1. Einstein Image */}
+          <div className="w-24 h-24 xs:w-32 xs:h-32 md:w-48 md:h-48 rounded-full overflow-hidden border-2 border-white/20 shadow-2xl mb-8 flex-shrink-0">
             <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/d/d3/Albert_Einstein_Head.jpg/480px-Albert_Einstein_Head.jpg" alt="Einstein" className="w-full h-full object-cover" />
           </div>
-          <h1 className="serif text-2xl md:text-5xl font-black mb-1 md:mb-2">Einstein's Universe</h1>
-          <p className="serif text-sm md:text-lg opacity-60 italic mb-6 md:mb-8">Collective logic of ze stars.</p>
-          <button className="font-black border-2 border-white px-8 py-3 md:px-10 md:py-4 rounded-full hover:bg-white hover:text-black transition-all uppercase text-xs md:text-base flex-shrink-0" onClick={() => { setHasStarted(true); startEra(Era.Introduction); }}>Enter Laboratory</button>
+
+          {/* 2. Action Button (Placed BEFORE the text) */}
+          <div className="mb-10 flex-shrink-0">
+            <button 
+              className="btn-prominent font-black px-12 py-5 rounded-full transition-all uppercase tracking-widest text-lg" 
+              onClick={() => { setHasStarted(true); startEra(Era.Introduction); }}
+            >
+              Enter Laboratory
+            </button>
+          </div>
+          
+          {/* 3. Text Information */}
+          <div className="flex flex-col items-center">
+            <h1 className="serif text-2xl md:text-5xl font-black mb-2">Einstein's Universe</h1>
+            <p className="serif text-sm md:text-lg opacity-60 italic max-w-[280px]">Collective logic of ze stars.</p>
+          </div>
         </div>
       )}
 
