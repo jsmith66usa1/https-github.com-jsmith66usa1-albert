@@ -67,8 +67,8 @@ async function isValidImage(blob: Blob): Promise<boolean> {
 }
 
 /**
- * Deep Probe: Analyzes environment and attempts to locate the /text/ directory
- * across multiple potential path structures.
+ * Deep Probe: Analyzes environment and attempts to locate the text directory
+ * across multiple potential path structures, prioritizing /public/text/.
  */
 export async function probeStaticDirectories() {
   const start = performance.now();
@@ -86,11 +86,12 @@ export async function probeStaticDirectories() {
   });
 
   const searchVectors = [
+    '/public/text/',   // High priority
+    'public/text/',
     '/text/',           
     'text/',            
     './text/',          
     '../text/',         
-    '/public/text/',    
     'Text/',            
   ];
 
@@ -99,8 +100,8 @@ export async function probeStaticDirectories() {
     label: 'PROBE START',
     duration: 0,
     status: 'SUCCESS',
-    message: `Analyzing ${searchVectors.length} potential locations...`,
-    source: 'geminiService.ts:117'
+    message: `Analyzing ${searchVectors.length} potential locations (Prioritizing public/text)...`,
+    source: 'geminiService.ts:119'
   });
 
   let foundAtLeastOne = false;
@@ -119,7 +120,7 @@ export async function probeStaticDirectories() {
         duration: performance.now() - start,
         status: isViable ? 'SUCCESS' : 'ERROR',
         message: `[Status ${status}] [Type: ${contentType}] ${absoluteUrl}`,
-        source: 'geminiService.ts:136'
+        source: 'geminiService.ts:138'
       });
 
       if (isViable) {
@@ -133,7 +134,7 @@ export async function probeStaticDirectories() {
         duration: 0,
         status: 'ERROR',
         message: `Network error reaching: ${absoluteUrl}`,
-        source: 'geminiService.ts:151'
+        source: 'geminiService.ts:153'
       });
     }
   }
@@ -144,8 +145,8 @@ export async function probeStaticDirectories() {
       label: 'PROBE FAILED',
       duration: performance.now() - start,
       status: 'ERROR',
-      message: `CRITICAL: No reachable 'text/' directory found. Ensure static files are deployed.`,
-      source: 'geminiService.ts:164'
+      message: `CRITICAL: No reachable text directory found. Checked /public/text/ and /text/.`,
+      source: 'geminiService.ts:166'
     });
   }
 }
@@ -171,7 +172,7 @@ async function scanEraFilesAtLocation(dirUrl: string) {
           duration: 0,
           status: isHtml ? 'ERROR' : 'CACHE_HIT',
           message: `[${res.status}] [Type: ${contentType}] ${fileUrl}`,
-          source: 'geminiService.ts:192'
+          source: 'geminiService.ts:194'
         });
       }
     } catch (e) {}
@@ -180,7 +181,6 @@ async function scanEraFilesAtLocation(dirUrl: string) {
 
 async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Promise<string | null> {
   const start = performance.now();
-  const dirName = type === 'text' ? 'text' : 'images';
   const prefix = type === 'text' ? 'einstein-discussion-' : 'einstein-diagram-';
   const extension = type === 'text' ? 'txt' : 'jpg';
   
@@ -196,12 +196,15 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
     filenames.add(`${prefix}${titleNoSpace.toLowerCase()}.${extension}`);
   }
 
-  const searchVectors = [
-    `/${dirName}/`,
-    `${dirName}/`,
-    `./${dirName}/`,
-    `../${dirName}/`
-  ];
+  // Define multi-path search vectors based on requested relocation to public/text/
+  const searchVectors = type === 'text' 
+    ? [
+        '/public/text/', 'public/text/', './public/text/', '../public/text/',
+        '/text/', 'text/', './text/', '../text/'
+      ]
+    : [
+        '/images/', 'images/', './images/', '../images/'
+      ];
 
   const triedUrls: string[] = [];
   const base = window.location.href;
@@ -226,7 +229,7 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
               duration: performance.now() - start, 
               status: 'ERROR', 
               message: `Ignored text/html 'soft 404' at ${absoluteUrl}`, 
-              source: 'geminiService.ts:246' 
+              source: 'geminiService.ts:251' 
             });
             continue;
           }
@@ -239,7 +242,7 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
               duration: performance.now() - start, 
               status: 'CACHE_HIT', 
               message: `SUCCESS: Found [${contentType}] at ${absoluteUrl}`, 
-              source: 'geminiService.ts:257' 
+              source: 'geminiService.ts:262' 
             });
             return text;
           }
@@ -252,7 +255,7 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
               duration: performance.now() - start, 
               status: 'CACHE_HIT', 
               message: `SUCCESS: Found [${contentType}] at ${absoluteUrl}`, 
-              source: 'geminiService.ts:268' 
+              source: 'geminiService.ts:273' 
             });
             return URL.createObjectURL(blob);
           }
@@ -266,8 +269,8 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
     label: 'SERVER MISS',
     duration: performance.now() - start,
     status: 'ERROR',
-    message: `Resource missing for ${eraKey}. Investigated paths: ${triedUrls.slice(0, 3).join(', ')}...`,
-    source: 'geminiService.ts:284'
+    message: `Resource missing for ${eraKey}. Checked public/text paths.`,
+    source: 'geminiService.ts:288'
   });
   
   return null;
@@ -322,7 +325,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'CACHE_HIT',
       message: 'Retrieved from laboratory records.',
-      source: 'geminiService.ts:341'
+      source: 'geminiService.ts:345'
     });
     return cached;
   }
@@ -347,7 +350,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'SUCCESS',
       message: 'Consulted ze relative wisdom of ze stars.',
-      source: 'geminiService.ts:368'
+      source: 'geminiService.ts:372'
     });
     return text;
   } catch (error: any) {
@@ -357,7 +360,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to communicate with ze stars.",
-      source: 'geminiService.ts:378'
+      source: 'geminiService.ts:382'
     });
     throw error;
   }
@@ -391,7 +394,7 @@ export async function generateChalkboardImage(description: string, eraKey?: stri
           duration: performance.now() - start,
           status: 'SUCCESS',
           message: 'Drawn upon ze chalkboard of time.',
-          source: 'geminiService.ts:412'
+          source: 'geminiService.ts:416'
         });
         return url;
       }
@@ -403,7 +406,7 @@ export async function generateChalkboardImage(description: string, eraKey?: stri
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to draw diagram.",
-      source: 'geminiService.ts:423'
+      source: 'geminiService.ts:427'
     });
   }
   return null;
@@ -434,7 +437,7 @@ export async function generateEinsteinSpeech(text: string): Promise<string | nul
         duration: performance.now() - start,
         status: 'SUCCESS',
         message: 'Ze voice of logic synthesized.',
-        source: 'geminiService.ts:456'
+        source: 'geminiService.ts:460'
       });
       return base64;
     }
@@ -445,7 +448,7 @@ export async function generateEinsteinSpeech(text: string): Promise<string | nul
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to synthesize voice.",
-      source: 'geminiService.ts:467'
+      source: 'geminiService.ts:471'
     });
   }
   return null;
