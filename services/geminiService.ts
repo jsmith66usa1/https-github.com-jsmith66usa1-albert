@@ -71,43 +71,39 @@ async function isValidImage(blob: Blob): Promise<boolean> {
 async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Promise<string | null> {
   const start = performance.now();
   
-  // Deterministic config for folder structure and filename prefixes
-  const dir = type === 'text' ? 'text' : 'images';
+  // Deterministic config: text folder must be named 'text'
+  const dirName = type === 'text' ? 'text' : 'images';
   const prefix = type === 'text' ? 'einstein-discussion-' : 'einstein-diagram-';
   const extension = type === 'text' ? 'txt' : 'jpg';
   
-  // Normalize the Era key for naming (removing spaces to match provided file list)
+  // The ERA key is the button name (Chapter ID). 
+  // Per requirement: name without spaces.
   const noSpaceKey = eraKey.replace(/\s+/g, '');
   
-  // Trials for filenames: prioritize original mixed-case, then try lowercase fallback
-  const names = [
-    `${prefix}${noSpaceKey}.${extension}`,
-    `${prefix}${noSpaceKey.toLowerCase()}.${extension}`
+  // Generate potential file names
+  const namesToTry = [
+    `${prefix}${noSpaceKey}.${extension}`,           // Mixed case (Introduction)
+    `${prefix}${noSpaceKey.toLowerCase()}.${extension}` // Lowercase (introduction)
   ];
 
   const origin = window.location.origin;
   const pathname = window.location.pathname;
-  // Determine base path for the app (handle subdirectories like /demo/ or just /)
+  // Resolve base path (e.g., '/' or '/subfolder/')
   const basePath = pathname.endsWith('/') ? pathname : pathname.split('/').slice(0, -1).join('/') + '/';
   
-  // Construct trial URLs: path should have the directory in it (e.g., text/...)
-  // We try relative to app base and absolute from root, excluding 'assets/' entirely
+  // Construct absolute trial URLs
   const trialUrls: string[] = [];
-  names.forEach(name => {
-    trialUrls.push(`${basePath}${dir}/${name}`); // App-relative directory path
-    trialUrls.push(`/${dir}/${name}`);           // Root-absolute directory path
-    trialUrls.push(`./${dir}/${name}`);          // Explicitly relative
+  namesToTry.forEach(name => {
+    // 1. Absolute from root (e.g., /text/...)
+    trialUrls.push(`${origin}/${dirName}/${name}`);
+    // 2. Relative to app base (e.g., https://site.com/app/text/...)
+    trialUrls.push(new URL(`${dirName}/${name}`, new URL(basePath, origin)).href);
   });
 
   const tried: string[] = [];
 
-  for (const trialPath of trialUrls) {
-    let absoluteUrl = "";
+  for (const absoluteUrl of trialUrls) {
     try {
-      // Resolve to absolute URL using the browser's URL constructor
-      absoluteUrl = new URL(trialPath, origin).href;
-      
-      // Skip if we already checked this identical absolute URL
       if (tried.includes(absoluteUrl)) continue;
       tried.push(absoluteUrl);
 
@@ -116,34 +112,31 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
         cache: 'no-cache'
       });
       
-      if (!response.ok) {
-        continue;
-      }
+      if (!response.ok) continue;
 
       const contentType = (response.headers.get('content-type') || '').toLowerCase();
       
       if (type === 'text') {
-        // Validation: Reject HTML responses (standard fallback for 404s in some environments)
-        if (contentType.includes('text/html')) {
-          continue;
-        }
+        // Validation: Ignore HTML responses which are often 404 fallback pages
+        if (contentType.includes('text/html')) continue;
         
         const text = await response.text();
         const trimmed = text.trim();
         
-        if (trimmed.length > 5 && !trimmed.startsWith('<!') && !trimmed.toLowerCase().startsWith('<html')) {
+        // Ensure content looks like a discussion and not a generic error page
+        if (trimmed.length > 10 && !trimmed.startsWith('<!') && !trimmed.toLowerCase().startsWith('<html')) {
           addLog({ 
             type: 'CACHE_DB', 
             label: 'SERVER HIT', 
             duration: performance.now() - start, 
             status: 'CACHE_HIT', 
-            message: `SUCCESS: Found static archive at ${absoluteUrl}`, 
-            source: 'geminiService.ts:121' 
+            message: `SUCCESS: Loaded archive from ${absoluteUrl}`, 
+            source: 'geminiService.ts:119' 
           });
           return text;
         }
       } else {
-        // Validation: Verify image binary integrity
+        // Validation: Ensure valid image binary
         const blob = await response.blob();
         if (await isValidImage(blob)) {
           addLog({ 
@@ -151,25 +144,25 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
             label: 'SERVER HIT', 
             duration: performance.now() - start, 
             status: 'CACHE_HIT', 
-            message: `SUCCESS: Found static diagram at ${absoluteUrl}`, 
-            source: 'geminiService.ts:133' 
+            message: `SUCCESS: Loaded diagram from ${absoluteUrl}`, 
+            source: 'geminiService.ts:131' 
           });
           return URL.createObjectURL(blob);
         }
       }
     } catch (e: any) {
-      // Catch network or URL resolution errors silently to continue trials
+      // Ignore network errors and continue trials
     }
   }
 
-  // Exhaustive miss logging with detailed trail if nothing found
+  // Diagnostic log for failed resolution
   addLog({
     type: 'SYSTEM',
     label: 'SERVER MISS',
     duration: performance.now() - start,
     status: 'ERROR',
-    message: `Static resource for ${eraKey} not found in ${dir}/ directory. Trail: ${tried.join(' | ')}`,
-    source: 'geminiService.ts:151'
+    message: `Resource not found for ${eraKey} in /${dirName} directory. Tried: ${tried.slice(0, 2).join(' , ')}`,
+    source: 'geminiService.ts:149'
   });
   
   return null;
@@ -211,7 +204,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
     if (matchedChapter) activeEraKey = matchedChapter.id;
   }
 
-  // Priority 1: Check Static Archive (Server-side text files)
+  // Priority 1: Check Static Archive (Pre-written text)
   if (activeEraKey) {
     const staticResult = await getFromStaticServer('text', activeEraKey);
     if (staticResult) return staticResult;
@@ -226,19 +219,19 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       label: 'LOCAL HIT',
       duration: performance.now() - start,
       status: 'CACHE_HIT',
-      message: 'Retrieved from local laboratory records.',
-      source: 'geminiService.ts:213'
+      message: 'Retrieved from local records.',
+      source: 'geminiService.ts:211'
     });
     return cached;
   }
 
-  // Priority 3: Live Generation (Gemini API)
+  // Priority 3: Gemini API Generation
   try {
     const ai = getAI();
     const chat = ai.chats.create({
       model: 'gemini-3-flash-preview',
       config: {
-        systemInstruction: "You are Professor Albert Einstein. Address the user as 'My dear friend'. Introduce the experience if it is the start. Explain pivotal eras of math. Keep it whimsical, humble, and academic. Use metaphors. Always use LaTeX for mathematical equations. IMPORTANT: You speak with a distinct German accent. Whenever the user asks for more detail, deeper math, or a follow-up question, you MUST provide a [IMAGE: description] tag at the very end of your response to illustrate the mathematical concept on your chalkboard. Be creative with the chalkboard descriptions.",
+        systemInstruction: "You are Professor Albert Einstein. Address the user as 'My dear friend'. Introduce the experience if it is the start. Explain pivotal eras of math. Keep it whimsical, humble, and academic. Use metaphors. Always use LaTeX for mathematical equations. IMPORTANT: You speak with a distinct German accent. Whenever the user asks for more detail, deeper math, or a follow-up question, you MUST provide a [IMAGE: description] tag at the very end of your response to illustrate the mathematical concept on your chalkboard.",
       },
       history: history
     });
@@ -253,7 +246,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'SUCCESS',
       message: 'Consulted ze relative wisdom of ze stars.',
-      source: 'geminiService.ts:241'
+      source: 'geminiService.ts:238'
     });
     return text;
   } catch (error: any) {
@@ -263,7 +256,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to communicate with ze stars.",
-      source: 'geminiService.ts:251'
+      source: 'geminiService.ts:248'
     });
     throw error;
   }
@@ -272,13 +265,11 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
 export async function generateChalkboardImage(description: string, eraKey?: string): Promise<string | null> {
   const start = performance.now();
   
-  // Priority 1: Check Static Server for Era-specific diagrams
   if (eraKey) {
     const staticImg = await getFromStaticServer('images', eraKey);
     if (staticImg) return staticImg;
   }
 
-  // Priority 2: Live Image Generation (Imagen 3 / Gemini 2.5 Flash Image)
   try {
     const ai = getAI();
     const response = await ai.models.generateContent({
@@ -300,7 +291,7 @@ export async function generateChalkboardImage(description: string, eraKey?: stri
           duration: performance.now() - start,
           status: 'SUCCESS',
           message: 'Drawn upon ze chalkboard of time.',
-          source: 'geminiService.ts:289'
+          source: 'geminiService.ts:285'
         });
         return url;
       }
@@ -312,7 +303,7 @@ export async function generateChalkboardImage(description: string, eraKey?: stri
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to draw diagram.",
-      source: 'geminiService.ts:300'
+      source: 'geminiService.ts:296'
     });
   }
   return null;
@@ -343,7 +334,7 @@ export async function generateEinsteinSpeech(text: string): Promise<string | nul
         duration: performance.now() - start,
         status: 'SUCCESS',
         message: 'Ze voice of logic synthesized.',
-        source: 'geminiService.ts:333'
+        source: 'geminiService.ts:329'
       });
       return base64;
     }
@@ -354,7 +345,7 @@ export async function generateEinsteinSpeech(text: string): Promise<string | nul
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to synthesize voice.",
-      source: 'geminiService.ts:344'
+      source: 'geminiService.ts:340'
     });
   }
   return null;
