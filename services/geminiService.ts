@@ -78,18 +78,23 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
   const pathname = window.location.pathname;
   const basePath = pathname.endsWith('/') ? pathname : pathname.split('/').slice(0, -1).join('/') + '/';
   
+  // Exhaustive search of possible static paths
   const pathsToTry = [
     `${basePath}${directory}/${fileName}`,
     `/${directory}/${fileName}`,
     `${directory}/${fileName}`,
-    `./${directory}/${fileName}`
+    `./${directory}/${fileName}`,
+    `${basePath}assets/${directory}/${fileName}`,
+    `/assets/${directory}/${fileName}`,
+    `assets/${directory}/${fileName}`
   ];
 
   const results: string[] = [];
 
   for (const urlToFetch of pathsToTry) {
+    let absoluteUrl = "";
     try {
-      const absoluteUrl = urlToFetch.startsWith('http') ? urlToFetch : new URL(urlToFetch, origin).href;
+      absoluteUrl = urlToFetch.startsWith('http') ? urlToFetch : new URL(urlToFetch, origin).href;
       
       const response = await fetch(absoluteUrl, { 
         cache: 'no-cache', 
@@ -102,7 +107,7 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
 
       const contentType = response.headers.get('content-type') || '';
       if (contentType.toLowerCase().includes('text/html')) {
-        results.push(`${absoluteUrl} (REJECTED: Content-Type is HTML)`);
+        results.push(`${absoluteUrl} (REJECTED: HTML MIME Type)`);
         continue;
       }
 
@@ -116,7 +121,7 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
             duration: performance.now() - start, 
             status: 'CACHE_HIT', 
             message: `SUCCESS: Loaded archive from ${absoluteUrl}`, 
-            source: 'geminiService.ts:107' 
+            source: 'geminiService.ts:114' 
           });
           return text;
         } else {
@@ -131,7 +136,7 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
             duration: performance.now() - start, 
             status: 'CACHE_HIT', 
             message: `SUCCESS: Loaded diagram from ${absoluteUrl}`, 
-            source: 'geminiService.ts:120' 
+            source: 'geminiService.ts:127' 
           });
           return URL.createObjectURL(blob);
         } else {
@@ -139,7 +144,8 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
         }
       }
     } catch (e: any) {
-      results.push(`${urlToFetch} (Fetch Error: ${e.message || 'unknown'})`);
+      const target = absoluteUrl || urlToFetch;
+      results.push(`${target} (Fetch Error: ${e.message || 'unknown'})`);
     }
   }
 
@@ -149,7 +155,7 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
     duration: performance.now() - start,
     status: 'ERROR',
     message: `Archive not found for: ${eraKey} (${type}). Attempts: ${results.join(' | ')}`,
-    source: 'geminiService.ts:138'
+    source: 'geminiService.ts:148'
   });
   
   return null;
@@ -205,7 +211,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'CACHE_HIT',
       message: 'Retrieved from laboratory records.',
-      source: 'geminiService.ts:192'
+      source: 'geminiService.ts:202'
     });
     return cached;
   }
@@ -230,7 +236,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'SUCCESS',
       message: 'Consulted ze relative wisdom of ze stars.',
-      source: 'geminiService.ts:220'
+      source: 'geminiService.ts:230'
     });
     return text;
   } catch (error: any) {
@@ -240,7 +246,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to communicate with ze stars.",
-      source: 'geminiService.ts:230'
+      source: 'geminiService.ts:240'
     });
     throw error;
   }
@@ -275,7 +281,7 @@ export async function generateChalkboardImage(description: string, eraKey?: stri
           duration: performance.now() - start,
           status: 'SUCCESS',
           message: 'Drawn upon ze chalkboard of time.',
-          source: 'geminiService.ts:262'
+          source: 'geminiService.ts:272'
         });
         return url;
       }
@@ -287,7 +293,7 @@ export async function generateChalkboardImage(description: string, eraKey?: stri
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to draw diagram.",
-      source: 'geminiService.ts:273'
+      source: 'geminiService.ts:283'
     });
   }
   return null;
@@ -318,7 +324,7 @@ export async function generateEinsteinSpeech(text: string): Promise<string | nul
         duration: performance.now() - start,
         status: 'SUCCESS',
         message: 'Ze voice of logic synthesized.',
-        source: 'geminiService.ts:303'
+        source: 'geminiService.ts:313'
       });
       return base64;
     }
@@ -329,7 +335,7 @@ export async function generateEinsteinSpeech(text: string): Promise<string | nul
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to synthesize voice.",
-      source: 'geminiService.ts:314'
+      source: 'geminiService.ts:324'
     });
   }
   return null;
