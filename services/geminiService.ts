@@ -68,31 +68,32 @@ async function isValidImage(blob: Blob): Promise<boolean> {
 
 /**
  * Probes the server specifically for the /text/ directory and Era files.
+ * Provides full absolute path logging for all checks.
  */
 export async function probeStaticDirectories() {
   const start = performance.now();
   const origin = window.location.origin;
+  const textDirUrl = new URL('/text/', origin).href;
 
   addLog({
     type: 'SYSTEM',
     label: 'VERIFYING DIR',
     duration: 0,
     status: 'SUCCESS',
-    message: `Checking reachability of directory: ${origin}/text/`,
-    source: 'geminiService.ts:91'
+    message: `Checking reachability of: ${textDirUrl}`,
+    source: 'geminiService.ts:92'
   });
 
   // 1. Verify directory itself exists/is reachable
   try {
-    const dirResponse = await fetch(`${origin}/text/`, { method: 'HEAD' });
+    const dirResponse = await fetch(textDirUrl, { method: 'HEAD' });
     if (dirResponse.ok || dirResponse.status === 403) {
-      // 403 usually means directory exists but listing is disabled, which is fine
       addLog({
         type: 'SYSTEM',
         label: 'DIR STATUS',
         duration: performance.now() - start,
         status: 'SUCCESS',
-        message: `[REACHABLE] /text/ directory identified (Status: ${dirResponse.status})`,
+        message: `[REACHABLE] ${textDirUrl} (Status: ${dirResponse.status})`,
         source: 'geminiService.ts:104'
       });
     } else {
@@ -101,7 +102,7 @@ export async function probeStaticDirectories() {
         label: 'DIR STATUS',
         duration: performance.now() - start,
         status: 'ERROR',
-        message: `[UNREACHABLE] /text/ directory not found (Status: ${dirResponse.status})`,
+        message: `[UNREACHABLE] ${textDirUrl} not found (Status: ${dirResponse.status})`,
         source: 'geminiService.ts:112'
       });
     }
@@ -111,49 +112,49 @@ export async function probeStaticDirectories() {
       label: 'DIR ERROR',
       duration: 0,
       status: 'ERROR',
-      message: `Failed to connect to /text/ root. CORS or Network issue.`,
+      message: `Failed to connect to ${textDirUrl}. Network/CORS block.`,
       source: 'geminiService.ts:121'
     });
   }
 
-  // 2. Scan for individual Era text files
+  // 2. Scan for individual Era text files using absolute paths
   addLog({
     type: 'SYSTEM',
     label: 'FILE SCAN',
     duration: 0,
     status: 'SUCCESS',
-    message: `Scanning for individual einstein-discussion files...`,
+    message: `Verifying static text cache manifest...`,
     source: 'geminiService.ts:131'
   });
 
   for (const chapter of CHAPTERS) {
     const eraIdNoSpaces = chapter.id.replace(/\s+/g, '');
     const filename = `einstein-discussion-${eraIdNoSpaces}.txt`;
-    const url = `${origin}/text/${filename}`;
+    const fullFileUrl = new URL(`/text/${filename}`, origin).href;
 
     try {
-      const res = await fetch(url, { method: 'HEAD' });
+      const res = await fetch(fullFileUrl, { method: 'HEAD' });
       if (res.ok) {
         addLog({
           type: 'SYSTEM',
-          label: 'FOUND FILE',
+          label: 'VERIFIED',
           duration: 0,
           status: 'CACHE_HIT',
-          message: `[VERIFIED] text/${filename}`,
+          message: `[FOUND] ${fullFileUrl}`,
           source: 'geminiService.ts:147'
         });
       } else {
         addLog({
           type: 'SYSTEM',
-          label: 'MISSING FILE',
+          label: 'MISSING',
           duration: 0,
           status: 'ERROR',
-          message: `[NOT FOUND] text/${filename} (Status: ${res.status})`,
+          message: `[NOT FOUND] ${fullFileUrl} (Status: ${res.status})`,
           source: 'geminiService.ts:155'
         });
       }
     } catch (e) {
-      // Ignore network errors for individual checks
+      // Catch network-level errors for this specific file
     }
   }
 }
@@ -163,6 +164,8 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
   const dirName = type === 'text' ? 'text' : 'images';
   const prefix = type === 'text' ? 'einstein-discussion-' : 'einstein-diagram-';
   const extension = type === 'text' ? 'txt' : 'jpg';
+  
+  // Naming logic: match button/id name without spaces
   const eraNoSpace = eraKey.replace(/\s+/g, '');
   const chapter = CHAPTERS.find(c => c.id === eraKey);
   const titleNoSpace = chapter ? chapter.title.replace(/\s+/g, '') : null;
@@ -205,14 +208,15 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
         if (contentType.includes('text/html')) continue;
         const text = await response.text();
         const trimmed = text.trim();
+        // Ensure valid content (not HTML error page)
         if (trimmed.length > 10 && !trimmed.startsWith('<!') && !trimmed.toLowerCase().startsWith('<html')) {
           addLog({ 
             type: 'CACHE_DB', 
             label: 'SERVER HIT', 
             duration: performance.now() - start, 
             status: 'CACHE_HIT', 
-            message: `SUCCESS: Found static archive at ${absoluteUrl}`, 
-            source: 'geminiService.ts:216' 
+            message: `SUCCESS: Loaded ${absoluteUrl}`, 
+            source: 'geminiService.ts:221' 
           });
           return text;
         }
@@ -224,8 +228,8 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
             label: 'SERVER HIT', 
             duration: performance.now() - start, 
             status: 'CACHE_HIT', 
-            message: `SUCCESS: Found static diagram at ${absoluteUrl}`, 
-            source: 'geminiService.ts:227' 
+            message: `SUCCESS: Loaded ${absoluteUrl}`, 
+            source: 'geminiService.ts:232' 
           });
           return URL.createObjectURL(blob);
         }
@@ -233,13 +237,14 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
     } catch (e) {}
   }
 
+  // Detailed error log including every URL that failed
   addLog({
     type: 'SYSTEM',
     label: 'SERVER MISS',
     duration: performance.now() - start,
     status: 'ERROR',
-    message: `Resource not found for ${eraKey} in /${dirName}.`,
-    source: 'geminiService.ts:242'
+    message: `Resource not found for ${eraKey} in /${dirName}. Tried: ${triedUrls.join(', ')}`,
+    source: 'geminiService.ts:247'
   });
   
   return null;
@@ -294,7 +299,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'CACHE_HIT',
       message: 'Retrieved from laboratory records.',
-      source: 'geminiService.ts:299'
+      source: 'geminiService.ts:304'
     });
     return cached;
   }
@@ -319,7 +324,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'SUCCESS',
       message: 'Consulted ze relative wisdom of ze stars.',
-      source: 'geminiService.ts:326'
+      source: 'geminiService.ts:331'
     });
     return text;
   } catch (error: any) {
@@ -329,7 +334,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to communicate with ze stars.",
-      source: 'geminiService.ts:336'
+      source: 'geminiService.ts:341'
     });
     throw error;
   }
@@ -363,7 +368,7 @@ export async function generateChalkboardImage(description: string, eraKey?: stri
           duration: performance.now() - start,
           status: 'SUCCESS',
           message: 'Drawn upon ze chalkboard of time.',
-          source: 'geminiService.ts:370'
+          source: 'geminiService.ts:375'
         });
         return url;
       }
@@ -375,7 +380,7 @@ export async function generateChalkboardImage(description: string, eraKey?: stri
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to draw diagram.",
-      source: 'geminiService.ts:381'
+      source: 'geminiService.ts:386'
     });
   }
   return null;
@@ -406,7 +411,7 @@ export async function generateEinsteinSpeech(text: string): Promise<string | nul
         duration: performance.now() - start,
         status: 'SUCCESS',
         message: 'Ze voice of logic synthesized.',
-        source: 'geminiService.ts:414'
+        source: 'geminiService.ts:419'
       });
       return base64;
     }
@@ -417,7 +422,7 @@ export async function generateEinsteinSpeech(text: string): Promise<string | nul
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to synthesize voice.",
-      source: 'geminiService.ts:425'
+      source: 'geminiService.ts:430'
     });
   }
   return null;
