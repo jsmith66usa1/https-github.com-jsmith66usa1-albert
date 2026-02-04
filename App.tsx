@@ -9,7 +9,8 @@ import {
   decode,
   decodeAudioData,
   getPerformanceLogs,
-  clearPerformanceLogs
+  clearPerformanceLogs,
+  probeStaticDirectories
 } from './services/geminiService';
 
 interface ErrorBoundaryProps { children?: React.ReactNode; }
@@ -226,7 +227,6 @@ const EinsteinApp: React.FC = () => {
       parts: [{ text: m.text }]
     }));
 
-    // Start Era-specific parallel loading if switch occurs
     let parallelImagePromise: Promise<string | null> | null = null;
     if (eraToSet) {
       const chapter = CHAPTERS.find(c => c.id === eraToSet);
@@ -253,10 +253,8 @@ const EinsteinApp: React.FC = () => {
         if (!signal.aborted && imageUrl) setLastImage(imageUrl);
         setIsImageLoading(false);
       } else {
-        // This is a follow-up query (typed, deeper math, or archive)
         setIsImageLoading(true);
         try {
-          // Use AI's suggested tag if present, otherwise fall back to a contextual sketch based on user prompt.
           const description = imageMatch ? imageMatch[1] : `A chalkboard calculation und sketch about: ${promptText.substring(0, 60)}`;
           const imageUrl = await generateChalkboardImage(description);
           if (!signal.aborted && imageUrl) setLastImage(imageUrl);
@@ -280,12 +278,9 @@ const EinsteinApp: React.FC = () => {
     <div className="flex flex-col h-full bg-[#0c0c0e] text-white overflow-hidden">
       {!hasStarted && (
         <div className="welcome-screen">
-          {/* 1. Einstein Image */}
           <div className="w-24 h-24 xs:w-32 xs:h-32 md:w-48 md:h-48 rounded-full overflow-hidden border-2 border-white/20 shadow-2xl mb-8 flex-shrink-0">
             <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/d/d3/Albert_Einstein_Head.jpg/480px-Albert_Einstein_Head.jpg" alt="Einstein" className="w-full h-full object-cover" />
           </div>
-
-          {/* 2. Action Button (Placed BEFORE the text) */}
           <div className="mb-10 flex-shrink-0">
             <button 
               className="btn-prominent font-black px-12 py-5 rounded-full transition-all uppercase tracking-widest text-lg" 
@@ -294,8 +289,6 @@ const EinsteinApp: React.FC = () => {
               Enter Laboratory
             </button>
           </div>
-          
-          {/* 3. Text Information */}
           <div className="flex flex-col items-center">
             <h1 className="serif text-2xl md:text-5xl font-black mb-2">Einstein's Universe</h1>
             <p className="serif text-sm md:text-lg opacity-60 italic max-w-[280px]">Collective logic of ze stars.</p>
@@ -308,6 +301,7 @@ const EinsteinApp: React.FC = () => {
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-black uppercase">Laboratory Registry</h2>
             <div className="flex gap-2">
+              <button onClick={() => probeStaticDirectories()} className="text-xs py-1 border-blue-400 bg-blue-900/30">Scan Directories</button>
               <button onClick={emailLogs} disabled={logs.length === 0} className="text-xs py-1 border-white/20 hover:border-white/60">Email</button>
               <button onClick={() => { clearPerformanceLogs(); setLogs([]); }} className="text-xs py-1">Flush</button>
               <button onClick={() => setIsLogsOpen(false)} className="bg-red-600 text-xs py-1">Close</button>
@@ -320,8 +314,8 @@ const EinsteinApp: React.FC = () => {
                   <span className={`log-tag ${log.status === 'CACHE_HIT' ? 'tag-cache' : log.status === 'ERROR' ? 'tag-error' : 'tag-system'}`}>{log.label}</span>
                   <div className="flex-1">
                     <div className="flex justify-between font-bold text-indigo-400">
-                      <span>{log.message}</span>
-                      <span className="opacity-30 text-[10px]">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                      <span className="break-all">{log.message}</span>
+                      <span className="opacity-30 text-[10px] ml-2 whitespace-nowrap">{new Date(log.timestamp).toLocaleTimeString()}</span>
                     </div>
                     <div className="flex justify-between items-center mt-1">
                       {log.source && <span className="text-[9px] opacity-60 font-mono text-emerald-400">Source: {log.source}</span>}
