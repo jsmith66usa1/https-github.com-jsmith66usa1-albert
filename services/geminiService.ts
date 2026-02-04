@@ -67,95 +67,122 @@ async function isValidImage(blob: Blob): Promise<boolean> {
 }
 
 /**
- * Probes the server specifically for the /text/ directory and Era files.
- * Provides full absolute path logging for all checks.
+ * Deep Probe: Analyzes environment and attempts to locate the /text/ directory
+ * across multiple potential path structures.
  */
 export async function probeStaticDirectories() {
   const start = performance.now();
   const origin = window.location.origin;
-  const textDirUrl = new URL('/text/', origin).href;
+  const href = window.location.href;
+  const pathname = window.location.pathname;
 
+  // Log Environment Metadata for Debugging
   addLog({
     type: 'SYSTEM',
-    label: 'VERIFYING DIR',
+    label: 'ENV CONTEXT',
     duration: 0,
     status: 'SUCCESS',
-    message: `Checking reachability of: ${textDirUrl}`,
-    source: 'geminiService.ts:92'
+    message: `Origin: ${origin} | Path: ${pathname} | Full: ${href}`,
+    source: 'geminiService.ts:98'
   });
 
-  // 1. Verify directory itself exists/is reachable
-  try {
-    const dirResponse = await fetch(textDirUrl, { method: 'HEAD' });
-    if (dirResponse.ok || dirResponse.status === 403) {
-      addLog({
-        type: 'SYSTEM',
-        label: 'DIR STATUS',
-        duration: performance.now() - start,
-        status: 'SUCCESS',
-        message: `[REACHABLE] ${textDirUrl} (Status: ${dirResponse.status})`,
-        source: 'geminiService.ts:104'
-      });
-    } else {
-      addLog({
-        type: 'SYSTEM',
-        label: 'DIR STATUS',
-        duration: performance.now() - start,
-        status: 'ERROR',
-        message: `[UNREACHABLE] ${textDirUrl} not found (Status: ${dirResponse.status})`,
-        source: 'geminiService.ts:112'
-      });
-    }
-  } catch (e) {
-    addLog({
-      type: 'ERROR',
-      label: 'DIR ERROR',
-      duration: 0,
-      status: 'ERROR',
-      message: `Failed to connect to ${textDirUrl}. Network/CORS block.`,
-      source: 'geminiService.ts:121'
-    });
-  }
+  // Candidates for discovery
+  const searchVectors = [
+    '/text/',           // Root absolute
+    'text/',            // Relative to current
+    './text/',          // Explicit relative
+    '../text/',         // Parent relative
+    '/public/text/',    // Common framework path
+    'Text/',            // Case variation
+  ];
 
-  // 2. Scan for individual Era text files using absolute paths
   addLog({
     type: 'SYSTEM',
-    label: 'FILE SCAN',
+    label: 'PROBE START',
     duration: 0,
     status: 'SUCCESS',
-    message: `Verifying static text cache manifest...`,
-    source: 'geminiService.ts:131'
+    message: `Analyzing ${searchVectors.length} potential text directory locations...`,
+    source: 'geminiService.ts:117'
+  });
+
+  let foundAtLeastOne = false;
+
+  for (const vector of searchVectors) {
+    const absoluteUrl = new URL(vector, href).href;
+    try {
+      const response = await fetch(absoluteUrl, { method: 'HEAD' });
+      const status = response.status;
+      const isViable = response.ok || status === 403; // 403 often means "folder exists but listing is off"
+
+      addLog({
+        type: 'SYSTEM',
+        label: isViable ? 'CANDIDATE OK' : 'CANDIDATE FAIL',
+        duration: performance.now() - start,
+        status: isViable ? 'SUCCESS' : 'ERROR',
+        message: `[Status ${status}] Check: ${absoluteUrl}`,
+        source: 'geminiService.ts:134'
+      });
+
+      if (isViable) {
+        foundAtLeastOne = true;
+        // If we found a viable directory, scan for the primary discussion file
+        await scanEraFilesAtLocation(absoluteUrl);
+      }
+    } catch (e) {
+      addLog({
+        type: 'ERROR',
+        label: 'FETCH BLOCKED',
+        duration: 0,
+        status: 'ERROR',
+        message: `Network/CORS error reaching: ${absoluteUrl}`,
+        source: 'geminiService.ts:149'
+      });
+    }
+  }
+
+  if (!foundAtLeastOne) {
+    addLog({
+      type: 'ERROR',
+      label: 'PROBE FAILED',
+      duration: performance.now() - start,
+      status: 'ERROR',
+      message: `CRITICAL: Could not find any reachable 'text/' directory. Verify server structure.`,
+      source: 'geminiService.ts:162'
+    });
+  }
+}
+
+/**
+ * Helper to check for Era files at a specific discovered location.
+ */
+async function scanEraFilesAtLocation(dirUrl: string) {
+  addLog({
+    type: 'SYSTEM',
+    label: 'MANIFEST SCAN',
+    duration: 0,
+    status: 'SUCCESS',
+    message: `Verifying Era manifest at: ${dirUrl}`,
+    source: 'geminiService.ts:177'
   });
 
   for (const chapter of CHAPTERS) {
-    const eraIdNoSpaces = chapter.id.replace(/\s+/g, '');
-    const filename = `einstein-discussion-${eraIdNoSpaces}.txt`;
-    const fullFileUrl = new URL(`/text/${filename}`, origin).href;
+    const eraId = chapter.id.replace(/\s+/g, '');
+    const filename = `einstein-discussion-${eraId}.txt`;
+    const fileUrl = dirUrl.endsWith('/') ? `${dirUrl}${filename}` : `${dirUrl}/${filename}`;
 
     try {
-      const res = await fetch(fullFileUrl, { method: 'HEAD' });
+      const res = await fetch(fileUrl, { method: 'HEAD' });
       if (res.ok) {
         addLog({
           type: 'SYSTEM',
-          label: 'VERIFIED',
+          label: 'FILE FOUND',
           duration: 0,
           status: 'CACHE_HIT',
-          message: `[FOUND] ${fullFileUrl}`,
-          source: 'geminiService.ts:147'
-        });
-      } else {
-        addLog({
-          type: 'SYSTEM',
-          label: 'MISSING',
-          duration: 0,
-          status: 'ERROR',
-          message: `[NOT FOUND] ${fullFileUrl} (Status: ${res.status})`,
-          source: 'geminiService.ts:155'
+          message: `[VERIFIED] ${fileUrl}`,
+          source: 'geminiService.ts:193'
         });
       }
-    } catch (e) {
-      // Catch network-level errors for this specific file
-    }
+    } catch (e) {}
   }
 }
 
@@ -165,7 +192,6 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
   const prefix = type === 'text' ? 'einstein-discussion-' : 'einstein-diagram-';
   const extension = type === 'text' ? 'txt' : 'jpg';
   
-  // Naming logic: match button/id name without spaces
   const eraNoSpace = eraKey.replace(/\s+/g, '');
   const chapter = CHAPTERS.find(c => c.id === eraKey);
   const titleNoSpace = chapter ? chapter.title.replace(/\s+/g, '') : null;
@@ -178,73 +204,68 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
     filenames.add(`${prefix}${titleNoSpace.toLowerCase()}.${extension}`);
   }
 
-  const trialPaths: string[] = [];
-  const dirs = [dirName, dirName.charAt(0).toUpperCase() + dirName.slice(1)];
-  
-  filenames.forEach(name => {
-    dirs.forEach(d => {
-      trialPaths.push(`${d}/${name}`);
-      trialPaths.push(`/${d}/${name}`);
-      trialPaths.push(`./${d}/${name}`);
-    });
-  });
+  const searchVectors = [
+    `/${dirName}/`,
+    `${dirName}/`,
+    `./${dirName}/`,
+    `../${dirName}/`
+  ];
 
   const triedUrls: string[] = [];
   const base = window.location.href;
 
-  for (const path of trialPaths) {
-    let absoluteUrl = "";
-    try {
-      absoluteUrl = new URL(path, base).href;
-      if (triedUrls.includes(absoluteUrl)) continue;
-      triedUrls.push(absoluteUrl);
+  for (const vector of searchVectors) {
+    for (const name of filenames) {
+      try {
+        const absoluteUrl = new URL(vector + name, base).href;
+        if (triedUrls.includes(absoluteUrl)) continue;
+        triedUrls.push(absoluteUrl);
 
-      const response = await fetch(absoluteUrl, { method: 'GET', cache: 'no-cache' });
-      if (!response.ok) continue;
+        const response = await fetch(absoluteUrl, { method: 'GET', cache: 'no-cache' });
+        if (!response.ok) continue;
 
-      const contentType = (response.headers.get('content-type') || '').toLowerCase();
-      
-      if (type === 'text') {
-        if (contentType.includes('text/html')) continue;
-        const text = await response.text();
-        const trimmed = text.trim();
-        // Ensure valid content (not HTML error page)
-        if (trimmed.length > 10 && !trimmed.startsWith('<!') && !trimmed.toLowerCase().startsWith('<html')) {
-          addLog({ 
-            type: 'CACHE_DB', 
-            label: 'SERVER HIT', 
-            duration: performance.now() - start, 
-            status: 'CACHE_HIT', 
-            message: `SUCCESS: Loaded ${absoluteUrl}`, 
-            source: 'geminiService.ts:221' 
-          });
-          return text;
+        const contentType = (response.headers.get('content-type') || '').toLowerCase();
+        
+        if (type === 'text') {
+          if (contentType.includes('text/html')) continue;
+          const text = await response.text();
+          const trimmed = text.trim();
+          if (trimmed.length > 10 && !trimmed.startsWith('<!') && !trimmed.toLowerCase().startsWith('<html')) {
+            addLog({ 
+              type: 'CACHE_DB', 
+              label: 'SERVER HIT', 
+              duration: performance.now() - start, 
+              status: 'CACHE_HIT', 
+              message: `SUCCESS: Loaded archive from ${absoluteUrl}`, 
+              source: 'geminiService.ts:249' 
+            });
+            return text;
+          }
+        } else {
+          const blob = await response.blob();
+          if (await isValidImage(blob)) {
+            addLog({ 
+              type: 'CACHE_DB', 
+              label: 'SERVER HIT', 
+              duration: performance.now() - start, 
+              status: 'CACHE_HIT', 
+              message: `SUCCESS: Loaded diagram from ${absoluteUrl}`, 
+              source: 'geminiService.ts:260' 
+            });
+            return URL.createObjectURL(blob);
+          }
         }
-      } else {
-        const blob = await response.blob();
-        if (await isValidImage(blob)) {
-          addLog({ 
-            type: 'CACHE_DB', 
-            label: 'SERVER HIT', 
-            duration: performance.now() - start, 
-            status: 'CACHE_HIT', 
-            message: `SUCCESS: Loaded ${absoluteUrl}`, 
-            source: 'geminiService.ts:232' 
-          });
-          return URL.createObjectURL(blob);
-        }
-      }
-    } catch (e) {}
+      } catch (e) {}
+    }
   }
 
-  // Detailed error log including every URL that failed
   addLog({
     type: 'SYSTEM',
     label: 'SERVER MISS',
     duration: performance.now() - start,
     status: 'ERROR',
-    message: `Resource not found for ${eraKey} in /${dirName}. Tried: ${triedUrls.join(', ')}`,
-    source: 'geminiService.ts:247'
+    message: `Resource missing for ${eraKey}. Investigated: ${triedUrls.join(', ')}`,
+    source: 'geminiService.ts:276'
   });
   
   return null;
@@ -299,7 +320,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'CACHE_HIT',
       message: 'Retrieved from laboratory records.',
-      source: 'geminiService.ts:304'
+      source: 'geminiService.ts:333'
     });
     return cached;
   }
@@ -324,7 +345,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'SUCCESS',
       message: 'Consulted ze relative wisdom of ze stars.',
-      source: 'geminiService.ts:331'
+      source: 'geminiService.ts:360'
     });
     return text;
   } catch (error: any) {
@@ -334,7 +355,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to communicate with ze stars.",
-      source: 'geminiService.ts:341'
+      source: 'geminiService.ts:370'
     });
     throw error;
   }
@@ -368,7 +389,7 @@ export async function generateChalkboardImage(description: string, eraKey?: stri
           duration: performance.now() - start,
           status: 'SUCCESS',
           message: 'Drawn upon ze chalkboard of time.',
-          source: 'geminiService.ts:375'
+          source: 'geminiService.ts:404'
         });
         return url;
       }
@@ -380,7 +401,7 @@ export async function generateChalkboardImage(description: string, eraKey?: stri
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to draw diagram.",
-      source: 'geminiService.ts:386'
+      source: 'geminiService.ts:415'
     });
   }
   return null;
@@ -411,7 +432,7 @@ export async function generateEinsteinSpeech(text: string): Promise<string | nul
         duration: performance.now() - start,
         status: 'SUCCESS',
         message: 'Ze voice of logic synthesized.',
-        source: 'geminiService.ts:419'
+        source: 'geminiService.ts:448'
       });
       return base64;
     }
@@ -422,7 +443,7 @@ export async function generateEinsteinSpeech(text: string): Promise<string | nul
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to synthesize voice.",
-      source: 'geminiService.ts:430'
+      source: 'geminiService.ts:459'
     });
   }
   return null;
