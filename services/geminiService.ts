@@ -74,22 +74,37 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
   const noSpaceKey = eraKey.replace(/\s+/g, '');
   const fileName = `${prefix}${noSpaceKey}.${extension}`;
   
+  const origin = window.location.origin;
+  const pathname = window.location.pathname;
+  const basePath = pathname.endsWith('/') ? pathname : pathname.split('/').slice(0, -1).join('/') + '/';
+  
   const pathsToTry = [
+    `${basePath}${directory}/${fileName}`,
+    `/${directory}/${fileName}`,
     `${directory}/${fileName}`,
-    `./${directory}/${fileName}`,
-    `/${directory}/${fileName}`
+    `./${directory}/${fileName}`
   ];
+
+  const results: string[] = [];
 
   for (const urlToFetch of pathsToTry) {
     try {
-      const response = await fetch(urlToFetch, { 
+      const absoluteUrl = urlToFetch.startsWith('http') ? urlToFetch : new URL(urlToFetch, origin).href;
+      
+      const response = await fetch(absoluteUrl, { 
         cache: 'no-cache', 
       });
       
-      if (!response.ok) continue;
+      if (!response.ok) {
+        results.push(`${absoluteUrl} (HTTP ${response.status})`);
+        continue;
+      }
 
       const contentType = response.headers.get('content-type') || '';
-      if (contentType.toLowerCase().includes('text/html')) continue;
+      if (contentType.toLowerCase().includes('text/html')) {
+        results.push(`${absoluteUrl} (REJECTED: Content-Type is HTML)`);
+        continue;
+      }
 
       if (type === 'text') {
         const text = await response.text();
@@ -100,10 +115,12 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
             label: 'SERVER HIT', 
             duration: performance.now() - start, 
             status: 'CACHE_HIT', 
-            message: `SUCCESS: Loaded archive from ${urlToFetch}`, 
-            source: 'geminiService.ts' 
+            message: `SUCCESS: Loaded archive from ${absoluteUrl}`, 
+            source: 'geminiService.ts:107' 
           });
           return text;
+        } else {
+          results.push(`${absoluteUrl} (REJECTED: Invalid Text Content)`);
         }
       } else {
         const blob = await response.blob();
@@ -113,14 +130,16 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
             label: 'SERVER HIT', 
             duration: performance.now() - start, 
             status: 'CACHE_HIT', 
-            message: `SUCCESS: Loaded diagram from ${urlToFetch}`, 
-            source: 'geminiService.ts' 
+            message: `SUCCESS: Loaded diagram from ${absoluteUrl}`, 
+            source: 'geminiService.ts:120' 
           });
           return URL.createObjectURL(blob);
+        } else {
+          results.push(`${absoluteUrl} (REJECTED: Invalid Image Bytes)`);
         }
       }
-    } catch (e) {
-      // Individual fetch errors ignored
+    } catch (e: any) {
+      results.push(`${urlToFetch} (Fetch Error: ${e.message || 'unknown'})`);
     }
   }
 
@@ -129,8 +148,8 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
     label: 'SERVER MISS',
     duration: performance.now() - start,
     status: 'ERROR',
-    message: `Archive not found for: ${eraKey} (${type})`,
-    source: 'geminiService.ts'
+    message: `Archive not found for: ${eraKey} (${type}). Attempts: ${results.join(' | ')}`,
+    source: 'geminiService.ts:138'
   });
   
   return null;
@@ -163,9 +182,6 @@ async function saveToCache(category: string, key: string, data: string): Promise
   } catch (e) {}
 }
 
-/**
- * Generates Einstein's textual response using Gemini 3 Flash.
- */
 export async function generateEinsteinResponse(prompt: string, history: any[], eraKey?: string): Promise<string> {
   const start = performance.now();
   
@@ -189,7 +205,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'CACHE_HIT',
       message: 'Retrieved from laboratory records.',
-      source: 'geminiService.ts'
+      source: 'geminiService.ts:192'
     });
     return cached;
   }
@@ -214,26 +230,22 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'SUCCESS',
       message: 'Consulted ze relative wisdom of ze stars.',
-      source: 'geminiService.ts'
+      source: 'geminiService.ts:220'
     });
     return text;
   } catch (error: any) {
-    // Fixed: Added missing properties to log error correctly
     addLog({
       type: 'ERROR',
       label: 'GEMINI ERROR',
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to communicate with ze stars.",
-      source: 'geminiService.ts'
+      source: 'geminiService.ts:230'
     });
     throw error;
   }
 }
 
-/**
- * Generates a chalkboard diagram using gemini-2.5-flash-image.
- */
 export async function generateChalkboardImage(description: string, eraKey?: string): Promise<string | null> {
   const start = performance.now();
   
@@ -263,7 +275,7 @@ export async function generateChalkboardImage(description: string, eraKey?: stri
           duration: performance.now() - start,
           status: 'SUCCESS',
           message: 'Drawn upon ze chalkboard of time.',
-          source: 'geminiService.ts'
+          source: 'geminiService.ts:262'
         });
         return url;
       }
@@ -275,15 +287,12 @@ export async function generateChalkboardImage(description: string, eraKey?: stri
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to draw diagram.",
-      source: 'geminiService.ts'
+      source: 'geminiService.ts:273'
     });
   }
   return null;
 }
 
-/**
- * Transforms text input into audio using gemini-2.5-flash-preview-tts.
- */
 export async function generateEinsteinSpeech(text: string): Promise<string | null> {
   const start = performance.now();
   try {
@@ -309,7 +318,7 @@ export async function generateEinsteinSpeech(text: string): Promise<string | nul
         duration: performance.now() - start,
         status: 'SUCCESS',
         message: 'Ze voice of logic synthesized.',
-        source: 'geminiService.ts'
+        source: 'geminiService.ts:303'
       });
       return base64;
     }
@@ -320,15 +329,12 @@ export async function generateEinsteinSpeech(text: string): Promise<string | nul
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to synthesize voice.",
-      source: 'geminiService.ts'
+      source: 'geminiService.ts:314'
     });
   }
   return null;
 }
 
-/**
- * Base64 decoding helper.
- */
 export function decode(base64: string): Uint8Array {
   const binaryString = atob(base64);
   const len = binaryString.length;
@@ -339,9 +345,6 @@ export function decode(base64: string): Uint8Array {
   return bytes;
 }
 
-/**
- * Decodes raw PCM audio bytes into an AudioBuffer.
- */
 export async function decodeAudioData(
   data: Uint8Array,
   ctx: AudioContext,
