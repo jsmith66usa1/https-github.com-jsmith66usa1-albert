@@ -71,110 +71,105 @@ async function isValidImage(blob: Blob): Promise<boolean> {
 async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Promise<string | null> {
   const start = performance.now();
   
-  // Deterministic config
-  const directory = type === 'text' ? 'text' : 'images';
+  // Deterministic config for folder structure and filename prefixes
+  const dir = type === 'text' ? 'text' : 'images';
   const prefix = type === 'text' ? 'einstein-discussion-' : 'einstein-diagram-';
   const extension = type === 'text' ? 'txt' : 'jpg';
   
-  // Clean key for file naming
+  // Normalize the Era key for naming (removing spaces to match provided file list)
   const noSpaceKey = eraKey.replace(/\s+/g, '');
   
-  // Try both original casing and lowercase to be safe
-  const fileNames = [
+  // Trials for filenames: prioritize original mixed-case, then try lowercase fallback
+  const names = [
     `${prefix}${noSpaceKey}.${extension}`,
     `${prefix}${noSpaceKey.toLowerCase()}.${extension}`
   ];
 
   const origin = window.location.origin;
   const pathname = window.location.pathname;
+  // Determine base path for the app (handle subdirectories like /demo/ or just /)
   const basePath = pathname.endsWith('/') ? pathname : pathname.split('/').slice(0, -1).join('/') + '/';
   
-  // Trial paths EXCLUDING 'assets/' as requested
-  const baseFolders = [
-    `${basePath}${directory}/`,
-    `/${directory}/`,
-    `${basePath}`,
-    `/`
-  ];
+  // Construct trial URLs: path should have the directory in it (e.g., text/...)
+  // We try relative to app base and absolute from root, excluding 'assets/' entirely
+  const trialUrls: string[] = [];
+  names.forEach(name => {
+    trialUrls.push(`${basePath}${dir}/${name}`); // App-relative directory path
+    trialUrls.push(`/${dir}/${name}`);           // Root-absolute directory path
+    trialUrls.push(`./${dir}/${name}`);          // Explicitly relative
+  });
 
-  const results: string[] = [];
+  const tried: string[] = [];
 
-  for (const folder of baseFolders) {
-    for (const fName of fileNames) {
-      const urlToFetch = `${folder}${fName}`;
-      let absoluteUrl = "";
-      try {
-        absoluteUrl = urlToFetch.startsWith('http') ? urlToFetch : new URL(urlToFetch, origin).href;
-        
-        // Prevent duplicate network calls for the same resolved absolute URL
-        if (results.some(r => r.startsWith(absoluteUrl))) continue;
+  for (const trialPath of trialUrls) {
+    let absoluteUrl = "";
+    try {
+      // Resolve to absolute URL using the browser's URL constructor
+      absoluteUrl = new URL(trialPath, origin).href;
+      
+      // Skip if we already checked this identical absolute URL
+      if (tried.includes(absoluteUrl)) continue;
+      tried.push(absoluteUrl);
 
-        const response = await fetch(absoluteUrl, { 
-          method: 'GET',
-          cache: 'no-cache'
-        });
-        
-        if (!response.ok) {
-          results.push(`${absoluteUrl} (HTTP ${response.status})`);
+      const response = await fetch(absoluteUrl, { 
+        method: 'GET',
+        cache: 'no-cache'
+      });
+      
+      if (!response.ok) {
+        continue;
+      }
+
+      const contentType = (response.headers.get('content-type') || '').toLowerCase();
+      
+      if (type === 'text') {
+        // Validation: Reject HTML responses (standard fallback for 404s in some environments)
+        if (contentType.includes('text/html')) {
           continue;
         }
-
-        const contentType = (response.headers.get('content-type') || '').toLowerCase();
         
-        if (type === 'text') {
-          // Validation: Reject HTML (catch-all routes/404 fallbacks)
-          if (contentType.includes('text/html')) {
-            results.push(`${absoluteUrl} (REJECTED: MIME is HTML)`);
-            continue;
-          }
-          
-          const text = await response.text();
-          const trimmed = text.trim();
-          
-          if (trimmed.length > 5 && !trimmed.startsWith('<!') && !trimmed.toLowerCase().startsWith('<html')) {
-            addLog({ 
-              type: 'CACHE_DB', 
-              label: 'SERVER HIT', 
-              duration: performance.now() - start, 
-              status: 'CACHE_HIT', 
-              message: `SUCCESS: Loaded text archive from ${absoluteUrl}`, 
-              source: 'geminiService.ts:133' 
-            });
-            return text;
-          } else {
-            results.push(`${absoluteUrl} (REJECTED: Invalid Text Content)`);
-          }
-        } else {
-          // Validation: Check image binary headers
-          const blob = await response.blob();
-          if (await isValidImage(blob)) {
-            addLog({ 
-              type: 'CACHE_DB', 
-              label: 'SERVER HIT', 
-              duration: performance.now() - start, 
-              status: 'CACHE_HIT', 
-              message: `SUCCESS: Loaded diagram from ${absoluteUrl}`, 
-              source: 'geminiService.ts:149' 
-            });
-            return URL.createObjectURL(blob);
-          } else {
-            results.push(`${absoluteUrl} (REJECTED: Invalid Image Header)`);
-          }
+        const text = await response.text();
+        const trimmed = text.trim();
+        
+        if (trimmed.length > 5 && !trimmed.startsWith('<!') && !trimmed.toLowerCase().startsWith('<html')) {
+          addLog({ 
+            type: 'CACHE_DB', 
+            label: 'SERVER HIT', 
+            duration: performance.now() - start, 
+            status: 'CACHE_HIT', 
+            message: `SUCCESS: Found static archive at ${absoluteUrl}`, 
+            source: 'geminiService.ts:121' 
+          });
+          return text;
         }
-      } catch (e: any) {
-        results.push(`${absoluteUrl || urlToFetch} (Error: ${e.message})`);
+      } else {
+        // Validation: Verify image binary integrity
+        const blob = await response.blob();
+        if (await isValidImage(blob)) {
+          addLog({ 
+            type: 'CACHE_DB', 
+            label: 'SERVER HIT', 
+            duration: performance.now() - start, 
+            status: 'CACHE_HIT', 
+            message: `SUCCESS: Found static diagram at ${absoluteUrl}`, 
+            source: 'geminiService.ts:133' 
+          });
+          return URL.createObjectURL(blob);
+        }
       }
+    } catch (e: any) {
+      // Catch network or URL resolution errors silently to continue trials
     }
   }
 
-  // Final diagnostic miss log
+  // Exhaustive miss logging with detailed trail if nothing found
   addLog({
     type: 'SYSTEM',
     label: 'SERVER MISS',
     duration: performance.now() - start,
     status: 'ERROR',
-    message: `Archive not found for: ${eraKey} (${type}). Trail: ${results.slice(0, 5).join(' | ')}`,
-    source: 'geminiService.ts:170'
+    message: `Static resource for ${eraKey} not found in ${dir}/ directory. Trail: ${tried.join(' | ')}`,
+    source: 'geminiService.ts:151'
   });
   
   return null;
@@ -216,11 +211,13 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
     if (matchedChapter) activeEraKey = matchedChapter.id;
   }
 
+  // Priority 1: Check Static Archive (Server-side text files)
   if (activeEraKey) {
     const staticResult = await getFromStaticServer('text', activeEraKey);
     if (staticResult) return staticResult;
   }
 
+  // Priority 2: Check Local IndexedDB Cache
   const cacheKey = await generateCacheKey(prompt + JSON.stringify(history));
   const cached = await getFromCache('text', cacheKey);
   if (cached) {
@@ -229,12 +226,13 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       label: 'LOCAL HIT',
       duration: performance.now() - start,
       status: 'CACHE_HIT',
-      message: 'Retrieved from laboratory records.',
-      source: 'geminiService.ts:233'
+      message: 'Retrieved from local laboratory records.',
+      source: 'geminiService.ts:213'
     });
     return cached;
   }
 
+  // Priority 3: Live Generation (Gemini API)
   try {
     const ai = getAI();
     const chat = ai.chats.create({
@@ -255,7 +253,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'SUCCESS',
       message: 'Consulted ze relative wisdom of ze stars.',
-      source: 'geminiService.ts:261'
+      source: 'geminiService.ts:241'
     });
     return text;
   } catch (error: any) {
@@ -265,7 +263,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to communicate with ze stars.",
-      source: 'geminiService.ts:271'
+      source: 'geminiService.ts:251'
     });
     throw error;
   }
@@ -274,11 +272,13 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
 export async function generateChalkboardImage(description: string, eraKey?: string): Promise<string | null> {
   const start = performance.now();
   
+  // Priority 1: Check Static Server for Era-specific diagrams
   if (eraKey) {
     const staticImg = await getFromStaticServer('images', eraKey);
     if (staticImg) return staticImg;
   }
 
+  // Priority 2: Live Image Generation (Imagen 3 / Gemini 2.5 Flash Image)
   try {
     const ai = getAI();
     const response = await ai.models.generateContent({
@@ -300,7 +300,7 @@ export async function generateChalkboardImage(description: string, eraKey?: stri
           duration: performance.now() - start,
           status: 'SUCCESS',
           message: 'Drawn upon ze chalkboard of time.',
-          source: 'geminiService.ts:310'
+          source: 'geminiService.ts:289'
         });
         return url;
       }
@@ -312,7 +312,7 @@ export async function generateChalkboardImage(description: string, eraKey?: stri
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to draw diagram.",
-      source: 'geminiService.ts:321'
+      source: 'geminiService.ts:300'
     });
   }
   return null;
@@ -343,7 +343,7 @@ export async function generateEinsteinSpeech(text: string): Promise<string | nul
         duration: performance.now() - start,
         status: 'SUCCESS',
         message: 'Ze voice of logic synthesized.',
-        source: 'geminiService.ts:354'
+        source: 'geminiService.ts:333'
       });
       return base64;
     }
@@ -354,7 +354,7 @@ export async function generateEinsteinSpeech(text: string): Promise<string | nul
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to synthesize voice.",
-      source: 'geminiService.ts:365'
+      source: 'geminiService.ts:344'
     });
   }
   return null;
