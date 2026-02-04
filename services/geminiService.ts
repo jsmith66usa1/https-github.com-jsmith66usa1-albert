@@ -80,14 +80,14 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
   const pathname = window.location.pathname;
   const basePath = pathname.endsWith('/') ? pathname : pathname.split('/').slice(0, -1).join('/') + '/';
   
-  // Exhaustive list of path patterns including the observed successful /assets/ prefix
+  // Trial paths to find the asset in various common build/deployment folder structures
   const pathsToTry = [
-    `${basePath}assets/${directory}/${fileName}`,  // 1. App Assets subfolder
-    `/assets/${directory}/${fileName}`,            // 2. Root Assets subfolder
-    `${basePath}${directory}/${fileName}`,         // 3. App Base subfolder
-    `/${directory}/${fileName}`,                   // 4. Root subfolder
-    `assets/${directory}/${fileName}`,             // 5. Relative Assets
-    `${directory}/${fileName}`,                    // 6. Relative folder
+    `${basePath}${directory}/${fileName}`,         // 1. App-relative (standard dev/public)
+    `${basePath}assets/${directory}/${fileName}`,  // 2. App-relative assets (standard production)
+    `/${directory}/${fileName}`,                   // 3. Absolute root
+    `/assets/${directory}/${fileName}`,            // 4. Absolute root assets
+    `${directory}/${fileName}`,                    // 5. Bare relative
+    `assets/${directory}/${fileName}`,             // 6. Bare relative assets
     `./${directory}/${fileName}`                   // 7. Explicit relative
   ];
 
@@ -100,8 +100,7 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
       
       const response = await fetch(absoluteUrl, { 
         method: 'GET',
-        cache: 'no-cache',
-        headers: { 'Accept': type === 'text' ? 'text/plain' : 'image/*' }
+        cache: 'no-cache' // Ensure we're not seeing a cached 404 or old version
       });
       
       if (!response.ok) {
@@ -109,11 +108,11 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
         continue;
       }
 
-      const contentType = response.headers.get('content-type') || '';
+      const contentType = (response.headers.get('content-type') || '').toLowerCase();
       
       if (type === 'text') {
-        // Validation: reject HTML (which is often a 404 fallback page)
-        if (contentType.toLowerCase().includes('text/html')) {
+        // Strict check: Ensure we didn't hit an HTML SPA fallback page
+        if (contentType.includes('text/html')) {
           results.push(`${absoluteUrl} (REJECTED: MIME is HTML)`);
           continue;
         }
@@ -128,14 +127,14 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
             duration: performance.now() - start, 
             status: 'CACHE_HIT', 
             message: `SUCCESS: Loaded text archive from ${absoluteUrl}`, 
-            source: 'geminiService.ts:121' 
+            source: 'geminiService.ts:114' 
           });
           return text;
         } else {
-          results.push(`${absoluteUrl} (REJECTED: Content is not a valid Archive)`);
+          results.push(`${absoluteUrl} (REJECTED: Invalid content start)`);
         }
       } else {
-        // Validation: Check for Image signatures
+        // Validation: Verify binary image headers
         const blob = await response.blob();
         if (await isValidImage(blob)) {
           addLog({ 
@@ -144,27 +143,27 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
             duration: performance.now() - start, 
             status: 'CACHE_HIT', 
             message: `SUCCESS: Loaded diagram from ${absoluteUrl}`, 
-            source: 'geminiService.ts:137' 
+            source: 'geminiService.ts:130' 
           });
           return URL.createObjectURL(blob);
         } else {
-          results.push(`${absoluteUrl} (REJECTED: Invalid Binary Data for Image)`);
+          results.push(`${absoluteUrl} (REJECTED: Invalid image binary)`);
         }
       }
     } catch (e: any) {
       const target = absoluteUrl || urlPattern;
-      results.push(`${target} (Error: ${e.message || 'unknown'})`);
+      results.push(`${target} (Err: ${e.message || 'unknown'})`);
     }
   }
 
-  // Final diagnostic miss log with full trail
+  // Final diagnostic trail log for 404 investigation
   addLog({
     type: 'SYSTEM',
     label: 'SERVER MISS',
     duration: performance.now() - start,
     status: 'ERROR',
-    message: `Archive not found for: ${eraKey} (${type}). Trail: ${results.join(' | ')}`,
-    source: 'geminiService.ts:157'
+    message: `Archive not found for: ${eraKey} (type: ${type}). Attempts: ${results.join(' | ')}`,
+    source: 'geminiService.ts:150'
   });
   
   return null;
@@ -220,7 +219,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'CACHE_HIT',
       message: 'Retrieved from laboratory records.',
-      source: 'geminiService.ts:219'
+      source: 'geminiService.ts:212'
     });
     return cached;
   }
@@ -245,7 +244,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'SUCCESS',
       message: 'Consulted ze relative wisdom of ze stars.',
-      source: 'geminiService.ts:247'
+      source: 'geminiService.ts:240'
     });
     return text;
   } catch (error: any) {
@@ -255,7 +254,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to communicate with ze stars.",
-      source: 'geminiService.ts:257'
+      source: 'geminiService.ts:250'
     });
     throw error;
   }
@@ -290,7 +289,7 @@ export async function generateChalkboardImage(description: string, eraKey?: stri
           duration: performance.now() - start,
           status: 'SUCCESS',
           message: 'Drawn upon ze chalkboard of time.',
-          source: 'geminiService.ts:296'
+          source: 'geminiService.ts:289'
         });
         return url;
       }
@@ -302,7 +301,7 @@ export async function generateChalkboardImage(description: string, eraKey?: stri
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to draw diagram.",
-      source: 'geminiService.ts:307'
+      source: 'geminiService.ts:300'
     });
   }
   return null;
@@ -333,7 +332,7 @@ export async function generateEinsteinSpeech(text: string): Promise<string | nul
         duration: performance.now() - start,
         status: 'SUCCESS',
         message: 'Ze voice of logic synthesized.',
-        source: 'geminiService.ts:340'
+        source: 'geminiService.ts:333'
       });
       return base64;
     }
@@ -344,7 +343,7 @@ export async function generateEinsteinSpeech(text: string): Promise<string | nul
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to synthesize voice.",
-      source: 'geminiService.ts:351'
+      source: 'geminiService.ts:344'
     });
   }
   return null;
