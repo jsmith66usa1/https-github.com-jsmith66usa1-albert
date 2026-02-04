@@ -74,31 +74,27 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
   const noSpaceKey = eraKey.replace(/\s+/g, '');
   const fileName = `${prefix}${noSpaceKey}.${extension}`;
   
-  // More robust path resolution for relative assets
   const pathsToTry = [
     `${directory}/${fileName}`,
     `./${directory}/${fileName}`,
-    fileName,
     `/${directory}/${fileName}`
   ];
 
   for (const urlToFetch of pathsToTry) {
     try {
       const response = await fetch(urlToFetch, { 
-        cache: 'default', // Allow browser cache for static assets
-        headers: { 'Accept': type === 'text' ? 'text/plain, */*' : 'image/*' }
+        cache: 'no-cache', 
       });
       
       if (!response.ok) continue;
 
       const contentType = response.headers.get('content-type') || '';
-      // On many hosts, missing files redirect to index.html with 200 OK.
-      // We check if the response is actually HTML.
       if (contentType.toLowerCase().includes('text/html')) continue;
 
       if (type === 'text') {
         const text = await response.text();
-        if (text && text.trim().length > 0 && !text.trim().startsWith('<!DOCTYPE')) {
+        const trimmed = text.trim();
+        if (trimmed.length > 0 && !trimmed.startsWith('<!') && !trimmed.toLowerCase().startsWith('<html')) {
           addLog({ 
             type: 'CACHE_DB', 
             label: 'SERVER HIT', 
@@ -124,9 +120,19 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
         }
       }
     } catch (e) {
-      // Fetch might fail due to network or CORS, just try next path
+      // Individual fetch errors ignored
     }
   }
+
+  addLog({
+    type: 'SYSTEM',
+    label: 'SERVER MISS',
+    duration: performance.now() - start,
+    status: 'ERROR',
+    message: `Archive not found for: ${eraKey} (${type})`,
+    source: 'geminiService.ts'
+  });
+  
   return null;
 }
 
@@ -157,23 +163,23 @@ async function saveToCache(category: string, key: string, data: string): Promise
   } catch (e) {}
 }
 
+/**
+ * Generates Einstein's textual response using Gemini 3 Flash.
+ */
 export async function generateEinsteinResponse(prompt: string, history: any[], eraKey?: string): Promise<string> {
   const start = performance.now();
   
-  // Fallback era detection if key is missing but it's a chapter start
   let activeEraKey = eraKey;
   if (!activeEraKey) {
     const matchedChapter = CHAPTERS.find(c => c.prompt === prompt);
     if (matchedChapter) activeEraKey = matchedChapter.id;
   }
 
-  // 1. Try static server files first (pre-rendered Einstein archives)
   if (activeEraKey) {
     const staticResult = await getFromStaticServer('text', activeEraKey);
     if (staticResult) return staticResult;
   }
 
-  // 2. Try Local Laboratory Storage (IndexedDB cache)
   const cacheKey = await generateCacheKey(prompt + JSON.stringify(history));
   const cached = await getFromCache('text', cacheKey);
   if (cached) {
@@ -188,7 +194,6 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
     return cached;
   }
 
-  // 3. Last resort: Consult the AI
   try {
     const ai = getAI();
     const chat = ai.chats.create({
@@ -213,144 +218,118 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
     });
     return text;
   } catch (error: any) {
+    // Fixed: Added missing properties to log error correctly
     addLog({
       type: 'ERROR',
-      label: 'AI FAIL',
+      label: 'GEMINI ERROR',
       duration: performance.now() - start,
       status: 'ERROR',
-      message: error.message,
+      message: error.message || "Failed to communicate with ze stars.",
       source: 'geminiService.ts'
     });
-    return "My dear friend, ze cosmic connection is slightly warped. Let us try again.";
+    throw error;
   }
 }
 
+/**
+ * Generates a chalkboard diagram using gemini-2.5-flash-image.
+ */
 export async function generateChalkboardImage(description: string, eraKey?: string): Promise<string | null> {
   const start = performance.now();
   
-  // 1. Try static server first
   if (eraKey) {
     const staticImg = await getFromStaticServer('images', eraKey);
     if (staticImg) return staticImg;
   }
 
-  // 2. Try Local Cache
-  const cacheKey = await generateCacheKey(description);
-  const cached = await getFromCache('image', cacheKey);
-  if (cached) return cached;
-
-  // 3. Generate with AI
   try {
     const ai = getAI();
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
-        parts: [{ text: `A chalkboard sketch: ${description}. White chalk on a dark dusty blackboard. Highly detailed mathematical and scientific diagram style.` }]
+        parts: [{ text: `A chalkboard sketch with white chalk on a dark dusty blackboard. Illustrate: ${description}` }]
       },
       config: {
-        imageConfig: { aspectRatio: "1:1" }
+        imageConfig: { aspectRatio: "16:9" }
       }
     });
 
-    let imageUrl = null;
-    for (const part of response.candidates[0].content.parts) {
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
       if (part.inlineData) {
-        imageUrl = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-        break;
+        const url = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+        addLog({
+          type: 'AI_IMAGE',
+          label: 'GEMINI IMAGE',
+          duration: performance.now() - start,
+          status: 'SUCCESS',
+          message: 'Drawn upon ze chalkboard of time.',
+          source: 'geminiService.ts'
+        });
+        return url;
       }
     }
-
-    if (imageUrl) {
-      await saveToCache('image', cacheKey, imageUrl);
-      addLog({
-        type: 'AI_IMAGE',
-        label: 'GEMINI IMAGE',
-        duration: performance.now() - start,
-        status: 'SUCCESS',
-        message: 'Successfully sketched on ze chalkboard.',
-        source: 'geminiService.ts'
-      });
-      return imageUrl;
-    }
-    return null;
   } catch (error: any) {
     addLog({
       type: 'ERROR',
-      label: 'IMAGE FAIL',
+      label: 'IMAGE ERROR',
       duration: performance.now() - start,
       status: 'ERROR',
-      message: error.message,
+      message: error.message || "Failed to draw diagram.",
       source: 'geminiService.ts'
     });
-    return null;
-  }
-}
-
-export async function generateEinsteinSpeech(text: string): Promise<string | null> {
-  const maxRetries = 3;
-  let retryCount = 0;
-  
-  const attemptSpeech = async (instructionPrefix: string): Promise<string | null> => {
-    const start = performance.now();
-    try {
-      const ai = getAI();
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: `${instructionPrefix}: ${text}` }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: 'Charon' },
-            },
-          },
-        },
-      });
-
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (base64Audio) {
-        addLog({
-          type: 'AI_AUDIO',
-          label: 'GEMINI TTS',
-          duration: performance.now() - start,
-          status: 'SUCCESS',
-          message: 'Synthesized ze professor\'s voice.',
-          source: 'geminiService.ts'
-        });
-        return base64Audio;
-      }
-      return null;
-    } catch (error: any) {
-      addLog({
-        type: 'ERROR',
-        label: `TTS FAIL ${retryCount + 1}`,
-        duration: performance.now() - start,
-        status: 'ERROR',
-        message: error.message,
-        source: 'geminiService.ts'
-      });
-      throw error;
-    }
-  };
-
-  const fullInstruction = "Say this with a warm, inquisitive, wise, and distinctly German-accented tone, phonetically pronouncing 'the' as 'ze' and 'that' as 'zat'";
-  const simpleInstruction = "Say this as Professor Einstein";
-
-  while (retryCount < maxRetries) {
-    try {
-      const currentInstruction = retryCount < 2 ? fullInstruction : simpleInstruction;
-      return await attemptSpeech(currentInstruction);
-    } catch (e: any) {
-      retryCount++;
-      if (retryCount >= maxRetries) return null;
-      const delay = Math.pow(2, retryCount - 1) * 1000;
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
   }
   return null;
 }
 
-export function decode(base64: string) {
+/**
+ * Transforms text input into audio using gemini-2.5-flash-preview-tts.
+ */
+export async function generateEinsteinSpeech(text: string): Promise<string | null> {
+  const start = performance.now();
+  try {
+    const ai = getAI();
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: [{ parts: [{ text: text }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: 'Kore' },
+          },
+        },
+      },
+    });
+
+    const base64 = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (base64) {
+      addLog({
+        type: 'AI_AUDIO',
+        label: 'GEMINI AUDIO',
+        duration: performance.now() - start,
+        status: 'SUCCESS',
+        message: 'Ze voice of logic synthesized.',
+        source: 'geminiService.ts'
+      });
+      return base64;
+    }
+  } catch (error: any) {
+    addLog({
+      type: 'ERROR',
+      label: 'AUDIO ERROR',
+      duration: performance.now() - start,
+      status: 'ERROR',
+      message: error.message || "Failed to synthesize voice.",
+      source: 'geminiService.ts'
+    });
+  }
+  return null;
+}
+
+/**
+ * Base64 decoding helper.
+ */
+export function decode(base64: string): Uint8Array {
   const binaryString = atob(base64);
   const len = binaryString.length;
   const bytes = new Uint8Array(len);
@@ -360,6 +339,9 @@ export function decode(base64: string) {
   return bytes;
 }
 
+/**
+ * Decodes raw PCM audio bytes into an AudioBuffer.
+ */
 export async function decodeAudioData(
   data: Uint8Array,
   ctx: AudioContext,
@@ -369,6 +351,7 @@ export async function decodeAudioData(
   const dataInt16 = new Int16Array(data.buffer);
   const frameCount = dataInt16.length / numChannels;
   const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
+
   for (let channel = 0; channel < numChannels; channel++) {
     const channelData = buffer.getChannelData(channel);
     for (let i = 0; i < frameCount; i++) {
