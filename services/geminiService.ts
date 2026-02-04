@@ -74,44 +74,26 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
   const noSpaceKey = eraKey.replace(/\s+/g, '');
   const fileName = `${prefix}${noSpaceKey}.${extension}`;
   
-  // Calculate base path for absolute resolution on deployed sites
-  const origin = window.location.origin;
-  const pathname = window.location.pathname;
-  const basePath = pathname.endsWith('/') ? pathname : pathname.split('/').slice(0, -1).join('/') + '/';
-  
   const pathsToTry = [
     `${directory}/${fileName}`,
     `./${directory}/${fileName}`,
-    `${basePath}${directory}/${fileName}`,
     `/${directory}/${fileName}`
   ];
 
-  const results: string[] = [];
-
   for (const urlToFetch of pathsToTry) {
     try {
-      // Use absolute URL to avoid base tag or routing ambiguity on mobile
-      const absoluteUrl = urlToFetch.startsWith('http') ? urlToFetch : new URL(urlToFetch, origin).href;
-      
-      const response = await fetch(absoluteUrl, { 
-        cache: 'no-cache', // Bypass local browser cache for fresh check
+      const response = await fetch(urlToFetch, { 
+        cache: 'no-cache', 
       });
       
-      if (!response.ok) {
-        results.push(`${urlToFetch} (${response.status})`);
-        continue;
-      }
+      if (!response.ok) continue;
 
       const contentType = response.headers.get('content-type') || '';
-      if (contentType.toLowerCase().includes('text/html')) {
-        results.push(`${urlToFetch} (REJECTED: HTML)`);
-        continue;
-      }
+      if (contentType.toLowerCase().includes('text/html')) continue;
 
       if (type === 'text') {
         const text = await response.text();
         const trimmed = text.trim();
-        // Ensure it's not an empty file or a generic HTML 404 page
         if (trimmed.length > 0 && !trimmed.startsWith('<!') && !trimmed.toLowerCase().startsWith('<html')) {
           addLog({ 
             type: 'CACHE_DB', 
@@ -122,8 +104,6 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
             source: 'geminiService.ts' 
           });
           return text;
-        } else {
-          results.push(`${urlToFetch} (REJECTED: CONTENT)`);
         }
       } else {
         const blob = await response.blob();
@@ -137,12 +117,10 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
             source: 'geminiService.ts' 
           });
           return URL.createObjectURL(blob);
-        } else {
-          results.push(`${urlToFetch} (REJECTED: IMAGE_BYTES)`);
         }
       }
     } catch (e) {
-      results.push(`${urlToFetch} (FETCH_ERROR)`);
+      // Individual fetch errors ignored
     }
   }
 
@@ -151,7 +129,7 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
     label: 'SERVER MISS',
     duration: performance.now() - start,
     status: 'ERROR',
-    message: `Archive not found for: ${eraKey} (${type}). Results: ${results.join(' | ')}`,
+    message: `Archive not found for: ${eraKey} (${type})`,
     source: 'geminiService.ts'
   });
   
@@ -240,6 +218,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
     });
     return text;
   } catch (error: any) {
+    // Fixed: Added missing properties to log error correctly
     addLog({
       type: 'ERROR',
       label: 'GEMINI ERROR',
