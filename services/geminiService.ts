@@ -46,8 +46,17 @@ const openDB = (): Promise<IDBDatabase> => {
 };
 
 const getAI = () => {
-  if (!process.env.API_KEY) throw new Error("Missing Laboratory Key (Gemini API Key).");
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+  let key = process.env.API_KEY;
+  
+  // Guard against missing or placeholder environment strings
+  if (!key || key === 'undefined' || key === 'null' || key.trim().length < 5) {
+    throw new Error("Missing Laboratory Key. Please ensure the API_KEY environment variable is configured.");
+  }
+
+  // Robust cleaning: remove whitespace and surrounding quotes (common in some environment injections)
+  const cleanKey = key.trim().replace(/^['"]|['"]$/g, '');
+
+  return new GoogleGenAI({ apiKey: cleanKey });
 };
 
 async function generateCacheKey(input: string): Promise<string> {
