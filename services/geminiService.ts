@@ -71,72 +71,74 @@ async function isValidImage(blob: Blob): Promise<boolean> {
 async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Promise<string | null> {
   const start = performance.now();
   
-  // Deterministic config: text folder must be named 'text'
-  const dirName = type === 'text' ? 'text' : 'images';
+  // Requirement: text directory MUST be named 'text'
+  const primaryDir = type === 'text' ? 'text' : 'images';
   const prefix = type === 'text' ? 'einstein-discussion-' : 'einstein-diagram-';
   const extension = type === 'text' ? 'txt' : 'jpg';
   
-  // The ERA key is the button name (Chapter ID). 
-  // Per requirement: name without spaces.
-  const noSpaceKey = eraKey.replace(/\s+/g, '');
-  
-  // Generate potential file names
-  const namesToTry = [
-    `${prefix}${noSpaceKey}.${extension}`,           // Mixed case (Introduction)
-    `${prefix}${noSpaceKey.toLowerCase()}.${extension}` // Lowercase (introduction)
-  ];
+  // Normalize key variants
+  const eraNoSpace = eraKey.replace(/\s+/g, '');
+  const chapter = CHAPTERS.find(c => c.id === eraKey);
+  const titleNoSpace = chapter ? chapter.title.replace(/\s+/g, '') : null;
 
-  const origin = window.location.origin;
-  const pathname = window.location.pathname;
-  // Resolve base path (e.g., '/' or '/subfolder/')
-  const basePath = pathname.endsWith('/') ? pathname : pathname.split('/').slice(0, -1).join('/') + '/';
+  // Build list of possible filenames
+  const filenames = new Set<string>();
+  // 1. Era name variants (as requested)
+  filenames.add(`${prefix}${eraNoSpace}.${extension}`);
+  filenames.add(`${prefix}${eraNoSpace.toLowerCase()}.${extension}`);
+  // 2. Title variants (fallback)
+  if (titleNoSpace) {
+    filenames.add(`${prefix}${titleNoSpace}.${extension}`);
+    filenames.add(`${prefix}${titleNoSpace.toLowerCase()}.${extension}`);
+  }
+
+  // Build exhaustive trial paths
+  const trialPaths: string[] = [];
+  const dirs = [primaryDir, primaryDir.charAt(0).toUpperCase() + primaryDir.slice(1)]; // 'text' and 'Text'
   
-  // Construct absolute trial URLs
-  const trialUrls: string[] = [];
-  namesToTry.forEach(name => {
-    // 1. Absolute from root (e.g., /text/...)
-    trialUrls.push(`${origin}/${dirName}/${name}`);
-    // 2. Relative to app base (e.g., https://site.com/app/text/...)
-    trialUrls.push(new URL(`${dirName}/${name}`, new URL(basePath, origin)).href);
+  filenames.forEach(name => {
+    dirs.forEach(d => {
+      trialPaths.push(`${d}/${name}`);    // Relative
+      trialPaths.push(`/${d}/${name}`);   // Absolute
+      trialPaths.push(`./${d}/${name}`);  // Explicit Relative
+    });
   });
 
-  const tried: string[] = [];
+  const triedUrls: string[] = [];
+  const base = window.location.href;
 
-  for (const absoluteUrl of trialUrls) {
+  for (const path of trialPaths) {
+    let absoluteUrl = "";
     try {
-      if (tried.includes(absoluteUrl)) continue;
-      tried.push(absoluteUrl);
+      absoluteUrl = new URL(path, base).href;
+      if (triedUrls.includes(absoluteUrl)) continue;
+      triedUrls.push(absoluteUrl);
 
-      const response = await fetch(absoluteUrl, { 
-        method: 'GET',
-        cache: 'no-cache'
-      });
-      
+      const response = await fetch(absoluteUrl, { method: 'GET', cache: 'no-cache' });
       if (!response.ok) continue;
 
       const contentType = (response.headers.get('content-type') || '').toLowerCase();
       
       if (type === 'text') {
-        // Validation: Ignore HTML responses which are often 404 fallback pages
+        // Robust check to skip HTML 404 pages
         if (contentType.includes('text/html')) continue;
         
         const text = await response.text();
         const trimmed = text.trim();
         
-        // Ensure content looks like a discussion and not a generic error page
+        // Ensure content is actually text archive and not an error page or empty file
         if (trimmed.length > 10 && !trimmed.startsWith('<!') && !trimmed.toLowerCase().startsWith('<html')) {
           addLog({ 
             type: 'CACHE_DB', 
             label: 'SERVER HIT', 
             duration: performance.now() - start, 
             status: 'CACHE_HIT', 
-            message: `SUCCESS: Loaded archive from ${absoluteUrl}`, 
-            source: 'geminiService.ts:119' 
+            message: `SUCCESS: Found static archive at ${absoluteUrl}`, 
+            source: 'geminiService.ts:114' 
           });
           return text;
         }
       } else {
-        // Validation: Ensure valid image binary
         const blob = await response.blob();
         if (await isValidImage(blob)) {
           addLog({ 
@@ -144,25 +146,25 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
             label: 'SERVER HIT', 
             duration: performance.now() - start, 
             status: 'CACHE_HIT', 
-            message: `SUCCESS: Loaded diagram from ${absoluteUrl}`, 
-            source: 'geminiService.ts:131' 
+            message: `SUCCESS: Found static diagram at ${absoluteUrl}`, 
+            source: 'geminiService.ts:125' 
           });
           return URL.createObjectURL(blob);
         }
       }
-    } catch (e: any) {
-      // Ignore network errors and continue trials
+    } catch (e) {
+      // Continue to next trial
     }
   }
 
-  // Diagnostic log for failed resolution
+  // Log detailed failure trail for diagnostics
   addLog({
     type: 'SYSTEM',
     label: 'SERVER MISS',
     duration: performance.now() - start,
     status: 'ERROR',
-    message: `Resource not found for ${eraKey} in /${dirName} directory. Tried: ${tried.slice(0, 2).join(' , ')}`,
-    source: 'geminiService.ts:149'
+    message: `Resource not found for ${eraKey} in /${primaryDir}. Check server directory structure. Tried: ${triedUrls.slice(0, 3).join(' , ')}`,
+    source: 'geminiService.ts:143'
   });
   
   return null;
@@ -204,13 +206,13 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
     if (matchedChapter) activeEraKey = matchedChapter.id;
   }
 
-  // Priority 1: Check Static Archive (Pre-written text)
+  // 1. Static Archive Check
   if (activeEraKey) {
     const staticResult = await getFromStaticServer('text', activeEraKey);
     if (staticResult) return staticResult;
   }
 
-  // Priority 2: Check Local IndexedDB Cache
+  // 2. Local Cache Check
   const cacheKey = await generateCacheKey(prompt + JSON.stringify(history));
   const cached = await getFromCache('text', cacheKey);
   if (cached) {
@@ -219,13 +221,13 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       label: 'LOCAL HIT',
       duration: performance.now() - start,
       status: 'CACHE_HIT',
-      message: 'Retrieved from local records.',
-      source: 'geminiService.ts:211'
+      message: 'Retrieved from laboratory records.',
+      source: 'geminiService.ts:203'
     });
     return cached;
   }
 
-  // Priority 3: Gemini API Generation
+  // 3. Live AI Consultation
   try {
     const ai = getAI();
     const chat = ai.chats.create({
@@ -246,7 +248,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'SUCCESS',
       message: 'Consulted ze relative wisdom of ze stars.',
-      source: 'geminiService.ts:238'
+      source: 'geminiService.ts:230'
     });
     return text;
   } catch (error: any) {
@@ -256,7 +258,7 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to communicate with ze stars.",
-      source: 'geminiService.ts:248'
+      source: 'geminiService.ts:240'
     });
     throw error;
   }
@@ -291,7 +293,7 @@ export async function generateChalkboardImage(description: string, eraKey?: stri
           duration: performance.now() - start,
           status: 'SUCCESS',
           message: 'Drawn upon ze chalkboard of time.',
-          source: 'geminiService.ts:285'
+          source: 'geminiService.ts:277'
         });
         return url;
       }
@@ -303,7 +305,7 @@ export async function generateChalkboardImage(description: string, eraKey?: stri
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to draw diagram.",
-      source: 'geminiService.ts:296'
+      source: 'geminiService.ts:288'
     });
   }
   return null;
@@ -334,7 +336,7 @@ export async function generateEinsteinSpeech(text: string): Promise<string | nul
         duration: performance.now() - start,
         status: 'SUCCESS',
         message: 'Ze voice of logic synthesized.',
-        source: 'geminiService.ts:329'
+        source: 'geminiService.ts:321'
       });
       return base64;
     }
@@ -345,7 +347,7 @@ export async function generateEinsteinSpeech(text: string): Promise<string | nul
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to synthesize voice.",
-      source: 'geminiService.ts:340'
+      source: 'geminiService.ts:332'
     });
   }
   return null;
