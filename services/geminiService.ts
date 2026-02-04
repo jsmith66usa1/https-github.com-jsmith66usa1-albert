@@ -418,12 +418,14 @@ export async function generateEinsteinSpeech(text: string): Promise<string | nul
     const ai = getAI();
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: text }] }],
+      // Adding explicit persona instructions to the TTS input for a distinct German accent.
+      contents: [{ parts: [{ text: `Speak in a warm, wise, elderly male voice with a distinct German accent: ${text}` }] }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
           voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Kore' },
+            // 'Fenrir' is a mature, authoritative male voice suitable for an older professor persona.
+            prebuiltVoiceConfig: { voiceName: 'Fenrir' },
           },
         },
       },
@@ -436,8 +438,8 @@ export async function generateEinsteinSpeech(text: string): Promise<string | nul
         label: 'GEMINI AUDIO',
         duration: performance.now() - start,
         status: 'SUCCESS',
-        message: 'Ze voice of logic synthesized.',
-        source: 'geminiService.ts:460'
+        message: 'Ze voice of logic synthesized with a German accent.',
+        source: 'geminiService.ts:462'
       });
       return base64;
     }
@@ -448,7 +450,7 @@ export async function generateEinsteinSpeech(text: string): Promise<string | nul
       duration: performance.now() - start,
       status: 'ERROR',
       message: error.message || "Failed to synthesize voice.",
-      source: 'geminiService.ts:471'
+      source: 'geminiService.ts:473'
     });
   }
   return null;
