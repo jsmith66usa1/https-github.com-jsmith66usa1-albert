@@ -89,6 +89,7 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
       if (!response.ok) continue;
 
       const contentType = response.headers.get('content-type') || '';
+      // Strict check to prevent loading the HTML index as text
       if (contentType.toLowerCase().includes('text/html')) continue;
 
       if (type === 'text') {
@@ -129,7 +130,7 @@ async function getFromStaticServer(type: 'text' | 'images', eraKey: string): Pro
     label: 'SERVER MISS',
     duration: performance.now() - start,
     status: 'ERROR',
-    message: `Archive not found for: ${eraKey} (${type})`,
+    message: `Archive not found for: ${eraKey} (${type}). Paths tried: ${pathsToTry.join(', ')}`,
     source: 'geminiService.ts'
   });
   
@@ -218,7 +219,6 @@ export async function generateEinsteinResponse(prompt: string, history: any[], e
     });
     return text;
   } catch (error: any) {
-    // Fixed: Added missing properties to log error correctly
     addLog({
       type: 'ERROR',
       label: 'GEMINI ERROR',
