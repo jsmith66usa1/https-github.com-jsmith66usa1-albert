@@ -68,6 +68,9 @@ const EinsteinApp: React.FC = () => {
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  // Unified processing state for text OR image loading
+  const isProcessing = isLoading || isImageLoading;
+
   const faqItems = useMemo(() => [
     { label: "Modern Apps", prompt: "How does this apply to today?" },
     { label: "Great Rivals", prompt: "Who were your rivals?" },
@@ -148,7 +151,6 @@ const EinsteinApp: React.FC = () => {
   };
 
   const playSpeech = async (text: string, msgId: number) => {
-    if (isLoading || isImageLoading) return; 
     if (currentlySpeakingId === msgId && (isAudioPlaying || isSpeechLoading)) {
       stopAudio();
       return;
@@ -205,7 +207,11 @@ const EinsteinApp: React.FC = () => {
   };
 
   const handleAction = async (promptText: string, eraToSet?: Era, isNewEra: boolean = false) => {
-    if (isLoading || isImageLoading) return; 
+    // Blocking logic: Allow Foundations to interrupt, but block other redundant actions during processing.
+    if (isProcessing && eraToSet !== Era.Foundations) {
+      return;
+    }
+    
     if (abortControllerRef.current) abortControllerRef.current.abort();
     abortControllerRef.current = new AbortController();
     const signal = abortControllerRef.current.signal;
@@ -227,45 +233,46 @@ const EinsteinApp: React.FC = () => {
       parts: [{ text: m.text }]
     }));
 
-    let parallelImagePromise: Promise<string | null> | null = null;
-    if (eraToSet) {
-      const chapter = CHAPTERS.find(c => c.id === eraToSet);
-      const match = chapter?.prompt.match(/\[IMAGE: (.*?)\]/);
-      if (match) {
-        setIsImageLoading(true);
-        parallelImagePromise = generateChalkboardImage(match[1], eraToSet);
-      }
-    }
-
     try {
-      const textPromise = generateEinsteinResponse(promptText, history, isNewEra ? eraToSet : undefined);
-      const responseText = await textPromise;
+      // PHASE ONE: Text First
+      const responseText = await generateEinsteinResponse(promptText, history, isNewEra ? eraToSet : undefined);
       if (signal.aborted) return;
       
       const safeResponse = responseText || "Ach, ze universe remains a mystery.";
-      const imageMatch = safeResponse.match(/\[IMAGE: (.*?)\]/);
       
       setMessages(prev => [...prev, { role: 'einstein', text: safeResponse, timestamp: Date.now() }]);
       if (eraToSet) setCurrentEra(eraToSet);
+      
+      setIsLoading(false);
 
-      if (parallelImagePromise) {
-        const imageUrl = await parallelImagePromise;
-        if (!signal.aborted && imageUrl) setLastImage(imageUrl);
-        setIsImageLoading(false);
+      // PHASE TWO: Image Generation (Sequential)
+      setIsImageLoading(true);
+      
+      let description = "";
+      const chapter = CHAPTERS.find(c => c.id === eraToSet);
+      const eraImageMatch = chapter?.prompt.match(/\[IMAGE: (.*?)\]/);
+      const responseImageMatch = safeResponse.match(/\[IMAGE: (.*?)\]/);
+      
+      if (eraImageMatch) {
+        description = eraImageMatch[1];
+      } else if (responseImageMatch) {
+        description = responseImageMatch[1];
       } else {
-        setIsImageLoading(true);
-        try {
-          const description = imageMatch ? imageMatch[1] : `A chalkboard calculation und sketch about: ${promptText.substring(0, 60)}`;
-          const imageUrl = await generateChalkboardImage(description);
-          if (!signal.aborted && imageUrl) setLastImage(imageUrl);
-        } catch (e) {} finally {
-          if (!signal.aborted) setIsImageLoading(false);
-        }
+        description = `A chalkboard calculation und sketch about: ${promptText.substring(0, 60)}`;
+      }
+
+      const imageUrl = await generateChalkboardImage(description, eraToSet);
+      
+      if (!signal.aborted && imageUrl) {
+        setLastImage(imageUrl);
       }
     } catch (err) { 
       console.error(err); 
     } finally { 
-      if (!signal.aborted) setIsLoading(false); 
+      if (!signal.aborted) {
+        setIsLoading(false); 
+        setIsImageLoading(false); 
+      }
     }
   };
 
@@ -335,25 +342,37 @@ const EinsteinApp: React.FC = () => {
           <span className="serif font-black text-base">Einstein</span>
         </div>
         <div className="header-controls">
-          <button onClick={() => setIsLogsOpen(true)} className="text-[10px] uppercase min-w-[60px]">Logs</button>
+          <button onClick={() => setIsLogsOpen(true)} disabled={isProcessing} className="text-[10px] uppercase min-w-[60px]">Logs</button>
           <button 
             onClick={() => { const last = [...messages].reverse().find(m => m.role === 'einstein'); if(last) playSpeech(last.text, messages.indexOf(last)); }} 
-            disabled={isLoading || messages.length === 0} 
+            disabled={isProcessing || messages.length === 0} 
             className={`min-w-[70px] text-[10px] uppercase font-black ${(isAudioPlaying || isSpeechLoading) ? 'bg-red-500' : 'bg-[#6366f1]'}`}
           >
             {isSpeechLoading ? 'Thinking...' : isAudioPlaying ? 'Stop' : 'Listen'}
           </button>
           
-          <button onClick={downloadConversation} disabled={messages.length === 0} className="text-[10px] uppercase min-w-[70px] opacity-80 hover:opacity-100">Save Text</button>
-          <button onClick={downloadChalkboard} disabled={!lastImage} className="text-[10px] uppercase min-w-[80px] opacity-80 hover:opacity-100">Save Image</button>
+          <button onClick={downloadConversation} disabled={isProcessing || messages.length === 0} className="text-[10px] uppercase min-w-[70px] opacity-80 hover:opacity-100">Save Text</button>
+          <button onClick={downloadChalkboard} disabled={isProcessing || !lastImage} className="text-[10px] uppercase min-w-[80px] opacity-80 hover:opacity-100">Save Image</button>
 
           <div className="relative">
-            <button onClick={() => !isLoading && setIsDropdownOpen(!isDropdownOpen)} disabled={isLoading} className="text-[10px] bg-white/5 uppercase min-w-[120px] text-left">
+            {/* The dropdown toggle remains active so user can reach 'Foundations' */}
+            <button onClick={() => setIsDropdownOpen(!isDropdownOpen)} className="text-[10px] bg-white/5 uppercase min-w-[120px] text-left">
               <span className="chapter-btn-label">{currentEra}</span> ▾
             </button>
             {isDropdownOpen && (
               <div className="absolute z-[110] top-full right-0 mt-2 bg-zinc-900 border border-white/10 rounded-xl w-60 overflow-hidden shadow-2xl">
-                {CHAPTERS.map(ch => <div key={ch.id} onClick={() => startEra(ch.id)} className={`p-3 cursor-pointer text-xs font-bold ${currentEra === ch.id ? 'bg-[#6366f1]' : 'hover:bg-white/5'}`}>{ch.id}</div>)}
+                {CHAPTERS.map(ch => {
+                  const isBlocked = isProcessing && ch.id !== Era.Foundations;
+                  return (
+                    <div 
+                      key={ch.id} 
+                      onClick={() => !isBlocked && startEra(ch.id)} 
+                      className={`p-3 cursor-pointer text-xs font-bold ${currentEra === ch.id ? 'bg-[#6366f1]' : 'hover:bg-white/5'} ${isBlocked ? 'opacity-30 cursor-not-allowed grayscale' : ''}`}
+                    >
+                      {ch.id} {isBlocked && <span className="text-[8px] opacity-50 ml-1">(Busy)</span>}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -371,7 +390,7 @@ const EinsteinApp: React.FC = () => {
                   ))}
                 </div>
                 {msg.role === 'einstein' && (
-                  <div onClick={() => !isLoading && playSpeech(msg.text, idx)} className={`text-[9px] mt-8 font-black uppercase tracking-widest cursor-pointer hover:opacity-100 flex items-center gap-1 ${currentlySpeakingId === idx ? 'text-red-400' : 'opacity-50'}`}>
+                  <div onClick={() => playSpeech(msg.text, idx)} className={`text-[9px] mt-8 font-black uppercase tracking-widest cursor-pointer hover:opacity-100 flex items-center gap-1 ${currentlySpeakingId === idx ? 'text-red-400' : 'opacity-50'}`}>
                     {currentlySpeakingId === idx ? '● Narrating...' : '▶ Read Thoughts'}
                   </div>
                 )}
@@ -391,20 +410,32 @@ const EinsteinApp: React.FC = () => {
       <footer className="footer">
         <div className="max-w-3xl mx-auto w-full">
           <div className="scroll-row no-scrollbar">
-            <button onClick={() => handleAction(`Professor, show me the deeper mathematics und provide a specific sketch for vis concept.`)} disabled={isLoading} className="text-[10px] bg-white/5 rounded-full px-5 py-2">Deeper Math</button>
+            <button onClick={() => handleAction(`Professor, show me the deeper mathematics und provide a specific sketch for vis concept.`)} disabled={isProcessing} className="text-[10px] bg-white/5 rounded-full px-5 py-2">Deeper Math</button>
             <div className="relative">
-              <button onClick={() => !isLoading && setIsFaqOpen(!isFaqOpen)} disabled={isLoading} className="text-[10px] bg-white/5 rounded-full px-5 py-2">Archive ▾</button>
+              <button onClick={() => setIsFaqOpen(!isFaqOpen)} disabled={isProcessing} className="text-[10px] bg-white/5 rounded-full px-5 py-2">Archive ▾</button>
               {isFaqOpen && (
                 <div className="absolute z-[120] bottom-full left-0 mb-3 bg-zinc-900 border border-white/10 rounded-xl w-60 p-1 shadow-2xl">
                   {faqItems.map((item, i) => <div key={i} onClick={() => handleAction(item.prompt)} className="p-3 cursor-pointer rounded-lg text-xs font-bold hover:bg-[#6366f1]">{item.label}</div>)}
                 </div>
               )}
             </div>
-            <button onClick={() => { const idx = CHAPTERS.findIndex(c => c.id === currentEra); if (idx < CHAPTERS.length - 1) startEra(CHAPTERS[idx+1].id); }} disabled={currentEra === Era.Unified || isLoading} className="text-[10px] bg-white/5 rounded-full px-5 py-2">Next Era</button>
+            <button 
+              onClick={() => { 
+                const idx = CHAPTERS.findIndex(c => c.id === currentEra); 
+                if (idx < CHAPTERS.length - 1) {
+                  const nextEraId = CHAPTERS[idx+1].id;
+                  startEra(nextEraId);
+                }
+              }} 
+              disabled={isProcessing || currentEra === Era.Unified} 
+              className="text-[10px] bg-white/5 rounded-full px-5 py-2"
+            >
+              Next Era
+            </button>
           </div>
-          <form onSubmit={(e) => { e.preventDefault(); if(userInput.trim() && !isLoading) { const t = userInput; setUserInput(''); handleAction(t); }}} className="input-row mt-3">
-            <input type="text" value={userInput} onChange={(e) => setUserInput(e.target.value)} disabled={isLoading} placeholder="Ask ze Professor..." />
-            <button type="submit" disabled={isLoading || !userInput.trim()} className="bg-[#6366f1] px-6 py-3 rounded-xl text-[10px] font-black uppercase">Send</button>
+          <form onSubmit={(e) => { e.preventDefault(); if(userInput.trim()) { const t = userInput; setUserInput(''); handleAction(t); }}} className="input-row mt-3">
+            <input type="text" value={userInput} onChange={(e) => setUserInput(e.target.value)} disabled={isProcessing} placeholder="Ask ze Professor..." />
+            <button type="submit" disabled={isProcessing || !userInput.trim()} className="bg-[#6366f1] px-6 py-3 rounded-xl text-[10px] font-black uppercase">Send</button>
           </form>
         </div>
       </footer>
