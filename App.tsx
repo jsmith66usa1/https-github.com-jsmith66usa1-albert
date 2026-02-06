@@ -10,7 +10,8 @@ import {
   decode,
   decodeAudioData,
   getPerformanceLogs,
-  clearPerformanceLogs
+  clearPerformanceLogs,
+  getStaticEraContent
 } from './services/geminiService';
 
 const EinsteinApp: React.FC = () => {
@@ -113,22 +114,51 @@ const EinsteinApp: React.FC = () => {
     setIsArchiveDropdownOpen(false);
     stopAudio();
 
-    if (isNewEra) { setMessages([]); setLastImage(null); }
-    else { setMessages(prev => [...prev, { role: 'user', text: promptText, timestamp: Date.now() }]); }
+    // Check for static content first if this is a new era switch
+    let responseText = "";
+    let staticImageUrl: string | null = null;
 
-    const history = isNewEra ? [] : [...messages].map(m => ({ role: m.role === 'einstein' ? 'model' : 'user', parts: [{ text: m.text }] }));
+    if (isNewEra && eraToSet) {
+      const staticContent = await getStaticEraContent(eraToSet);
+      if (staticContent.text) {
+        responseText = staticContent.text;
+        staticImageUrl = staticContent.imageUrl;
+      }
+    }
+
+    if (isNewEra) { 
+      setMessages([]); 
+      setLastImage(null); 
+    } else { 
+      setMessages(prev => [...prev, { role: 'user', text: promptText, timestamp: Date.now() }]); 
+    }
 
     try {
-      const responseText = await generateEinsteinResponse(promptText, history, isNewEra ? eraToSet : undefined);
+      if (!responseText) {
+        const history = isNewEra ? [] : [...messages].map(m => ({ role: m.role === 'einstein' ? 'model' : 'user', parts: [{ text: m.text }] }));
+        responseText = await generateEinsteinResponse(promptText, history, isNewEra ? eraToSet : undefined);
+      }
+
       if (signal.aborted) return;
+      
       setMessages(prev => [...prev, { role: 'einstein', text: responseText, timestamp: Date.now() }]);
       if (eraToSet) setCurrentEra(eraToSet);
       setIsLoading(false);
       setIsImageLoading(true);
-      const description = responseText.match(/\[IMAGE: (.*?)\]/)?.[1] || `Diagram for ${promptText}`;
-      const imageUrl = await generateChalkboardImage(description, eraToSet);
-      if (!signal.aborted && imageUrl) setLastImage(imageUrl);
-    } catch (err) { } finally { setIsLoading(false); setIsImageLoading(false); }
+
+      if (staticImageUrl) {
+        setLastImage(staticImageUrl);
+        setIsImageLoading(false);
+      } else {
+        const description = responseText.match(/\[IMAGE: (.*?)\]/)?.[1] || `Diagram for ${promptText}`;
+        const imageUrl = await generateChalkboardImage(description, eraToSet);
+        if (!signal.aborted && imageUrl) setLastImage(imageUrl);
+        setIsImageLoading(false);
+      }
+    } catch (err) { 
+      setIsLoading(false); 
+      setIsImageLoading(false); 
+    }
   };
 
   const handleMathNews = async () => {
@@ -298,6 +328,7 @@ const EinsteinApp: React.FC = () => {
       <footer className="footer">
         <div className="max-w-4xl mx-auto w-full">
           <div className="scroll-row no-scrollbar items-center justify-between gap-4">
+            {/* NEXT ERA IS NOW FIRST */}
             <button 
               onClick={() => { 
                 const idx = CHAPTERS.findIndex(c => c.id === currentEra); 

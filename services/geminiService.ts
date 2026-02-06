@@ -54,11 +54,35 @@ const getAI = () => {
   return new GoogleGenAI({ apiKey: cleanKey });
 };
 
-async function generateCacheKey(input: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(input);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 32);
+/**
+ * Checks for static historical content first before AI generation.
+ */
+export async function getStaticEraContent(era: Era): Promise<{ text: string | null, imageUrl: string | null }> {
+  const key = era.replace(/\s+/g, '');
+  let text: string | null = null;
+  let imageUrl: string | null = null;
+
+  try {
+    const textResp = await fetch(`/text/einstein-discussion-${key}.txt`);
+    if (textResp.ok) {
+      const rawText = await textResp.text();
+      // Remove "EINSTEIN: " prefix if present in the file for cleaner UI display
+      text = rawText.replace(/^EINSTEIN:\s*/i, '').trim();
+    }
+  } catch (e) {
+    console.debug(`Static text not found for ${era}`);
+  }
+
+  try {
+    const imgResp = await fetch(`/images/einstein-visual-${key}.png`);
+    if (imgResp.ok) {
+      imageUrl = `/images/einstein-visual-${key}.png`;
+    }
+  } catch (e) {
+    console.debug(`Static image not found for ${era}`);
+  }
+
+  return { text, imageUrl };
 }
 
 export async function generateEinsteinResponse(prompt: string, history: any[], eraKey?: string): Promise<string> {
